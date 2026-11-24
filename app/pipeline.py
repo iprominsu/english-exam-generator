@@ -10,10 +10,11 @@ from datetime import datetime, timezone
 import hashlib
 import json
 
-from . import config, llm, render, sheets_io, vocab, validation, operations, candidates, day_range, legacy_generator
+from . import config, render, sheets_io, vocab, validation, operations, candidates, day_range, legacy_generator
 from feature_word_meaning.drive_sync import EXPECTED_ACCOUNT
 from .errors import AppError
 from .google_clients import upload_bytes
+from .worksheet_downloads import find_existing_folder
 
 
 def pick_set(loaded, version, *, include_deleted=False):
@@ -41,8 +42,8 @@ async def _render_and_upload(questions, ctx, version) -> dict:
     return {"file_id": f["id"], "web_link": f["webViewLink"], "pdf_name": pdf_name}
 
 
-async def generate_and_render(day: int, vocab_path: str, provider: str, count: int,
-                              reasoning: str = config.GPT_REASONING_DEFAULT, *, source=None, record=None, day_end=None,
+async def generate_and_render(day: int, vocab_path: str | None, count: int,
+                              *, source=None, record=None, day_end=None,
                               bank=None, unit_ids=None, seed=None, question_types=None, allow_partial=False) -> dict:
     """Day 하나: 새 문항 생성 → 시트 누적 → 최신 세트로 PDF 렌더 → 업로드."""
     if record and record.get("questions"):
@@ -51,8 +52,8 @@ async def generate_and_render(day: int, vocab_path: str, provider: str, count: i
         if record and record.get('bank_snapshot'):
             bank, unit_ids = record['bank_snapshot'], record['unit_ids']
         elif bank is None:
-            vocab_df = await run_in_threadpool(vocab.load_range, vocab_path, day, day_end)
-            bank = vocab.to_bank(vocab_df, day, source=source)
+            rows = await run_in_threadpool(vocab.load_range, vocab_path, day, day_end)
+            bank = vocab.to_bank(rows, day, source=source)
             unit_ids = [unit['id'] for unit in bank['units']]
         if record:
             record.update(bank_snapshot=bank, unit_ids=list(unit_ids))
@@ -125,8 +126,9 @@ def _next_day_version(day, target_ctx, existing, exam_count):
     return maximum + 1
 
 
-def _get_ws_loaded(day: int, exam_count: int, version: int = None):
-    contexts = [c for c in sheets_io.list_day_folders() if c['day'] == day]
+def _get_ws_loaded(day: int, exam_count: int, version: int = None, *, create_project: bool = True):
+    project_id = None if create_project else find_existing_folder(sheets_io.drive_service(), config.PROJECT_FOLDER)
+    contexts = [c for c in sheets_io.list_day_folders(project_id=project_id) if c['day'] == day]
     matches = []
     for ctx in contexts:
         ws, loaded, _ = sheets_io.open_day_sheet(ctx, create=False, exam_count=exam_count)
@@ -304,7 +306,7 @@ def _list_worksheets_sync(exam_count: int):
             count = len(chosen)
             if count == 0:
                 continue
-            version_context = sheets_io.version_ctx(ctx, [q for q in loaded if q["set"] == v])
+            version_context = sheets_io.version_ctx(ctx, chosen)
             pdf_name = sheets_io.pdf_name_for(version_context["title"], v)
             f = next((item for item in files if item['name'] == pdf_name and item.get('mimeType') == 'application/pdf'), None)
             out.append(

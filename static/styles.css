@@ -70,7 +70,6 @@ input,select,textarea{font-family:inherit}
 .body-row{display:flex;align-items:flex-start}
 .sidebar{width:212px;flex:0 0 212px;position:sticky;top:57px;height:calc(100vh - 57px);
   overflow:auto;padding:18px 0 30px;border-right:1px solid var(--me-border)}
-@media (max-width:780px){ .sidebar{display:none} }
 .side-group{font-size:11px;color:var(--me-text-muted);font-weight:700;letter-spacing:.03em;margin:18px 22px 7px}
 .side-item{margin:1px 10px}
 
@@ -96,8 +95,6 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .worksheet-kinds{max-width:100%;flex-wrap:wrap}
 .worksheet-kinds button{white-space:nowrap}
 
-.seg button .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle;background:currentColor;opacity:.5}
-.seg button[aria-pressed="true"] .dot{opacity:1}
 .generation-mode-field{max-width:100%;min-width:0}
 .generation-modes{display:inline-flex;width:fit-content;max-width:100%}
 .generation-modes button{min-width:0;padding:7px 12px;line-height:1.5;word-break:keep-all}
@@ -105,19 +102,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .divider-h{border-top:1px dashed var(--me-border-strong);margin:18px 0}
 
 .uploader .ic{font-size:22px}
-.file-chip{display:inline-flex;align-items:center;gap:8px;background:var(--me-surface);border:1px solid var(--me-border);
-  border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600}
-.file-chip .ok{color:var(--me-success)}
-.file-chip .x{color:var(--me-text-muted);cursor:pointer;font-weight:700}
-.file-item{max-width:100%}
-.file-item summary{cursor:pointer;list-style:none;text-align:left}
-.file-item summary::-webkit-details-marker{display:none}
-.file-item summary:focus-visible{outline:2px solid var(--me-focus);outline-offset:-1px}
-.file-item[open] .file-chip{border-color:var(--me-focus);background:var(--me-action-subtle)}
 .file-name{min-width:0;overflow-wrap:anywhere}
-.file-actions{display:flex;gap:6px;padding:8px 4px 2px}
-.file-actions a{text-decoration:none}
-#filelist{align-items:flex-start}
 .question-ai{flex:0 0 auto;width:26px;height:26px;border:1px solid var(--me-focus);border-radius:7px;background:var(--me-action-subtle);color:var(--me-action-subtle-text);display:inline-flex;align-items:center;justify-content:center;padding:3px}
 .question-ai .me-icon{flex-shrink:0}
 .question-ai:focus-visible,.candidate-tabs button:focus-visible{outline:2px solid var(--me-focus);outline-offset:-1px}
@@ -127,11 +112,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .candidate-tabs button[aria-pressed="true"]{border-color:var(--me-focus);background:var(--me-action-subtle);color:var(--me-action-subtle-text)}
 .candidate-status{font-size:12px;color:var(--me-text-secondary);text-align:right;margin:0 0 10px;font-variant-numeric:tabular-nums}
 .question-generation-progress{font-size:13px;font-weight:600;color:var(--me-action-subtle-text);font-variant-numeric:tabular-nums}
-.question-model-options{display:grid;gap:8px;margin:18px 0}
-.question-model-options .seg{width:fit-content;max-width:100%;flex-wrap:wrap}
-#questionReasoningOptions{margin-top:8px}
 @keyframes candidate-pulse{to{opacity:.35}}
-#vocabDeleteName{font-weight:700;color:var(--me-text)}
 
 .field-note{font-size:11.5px;color:var(--me-text-muted);margin-top:4px}
 
@@ -240,23 +221,8 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .site-footer .fp{margin-top:6px;font-size:11px;color:var(--footer-muted);text-decoration:underline}
 
 .brand-logo{width:36px;height:36px;object-fit:contain;vertical-align:middle;margin-right:8px}
-.model-picker{position:relative;overflow:visible;flex-wrap:wrap}
 .generation-section{position:relative;z-index:2;overflow:visible}
 .generation-section>.section-head{border-radius:var(--me-radius-panel) var(--me-radius-panel) 0 0}
-.gpt-picker{position:relative}
-.model-chevron{font-size:15px;margin-left:3px}
-.model-picker button:disabled{cursor:not-allowed;opacity:.48}
-.model-picker small{font-size:10px;margin-left:3px;font-weight:500}
-.usage-tooltip{position:absolute;left:0;bottom:calc(100% + 9px);z-index:30;width:270px;max-width:calc(100vw - 48px);padding:11px 13px;background:var(--me-text);color:var(--me-surface);border-radius:10px;font-size:12px;line-height:1.7;white-space:pre-line;box-shadow:var(--me-shadow-menu);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s}
-.gpt-picker:hover .usage-tooltip,.gpt-picker:focus-within .usage-tooltip{opacity:1;visibility:visible}
-.gpt-picker:has([aria-expanded="true"]) .usage-tooltip{visibility:hidden;opacity:0}
-.reasoning-menu{position:absolute;left:0;top:calc(100% + 8px);z-index:25;min-width:235px;max-width:calc(100vw - 48px);padding:12px;background:var(--me-surface);color:var(--me-text);border:1px solid var(--me-border);border-radius:12px;box-shadow:var(--me-shadow-menu)}
-.reasoning-menu[hidden]{display:none}
-.reasoning-heading{display:block;font-size:11px;font-weight:700;color:var(--me-text-secondary);margin:0 6px 8px}
-.reasoning-menu [role="group"]{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-.seg .reasoning-menu button{justify-content:center;border-radius:7px;padding:8px 12px}
-.reasoning-note{display:block;font-size:11px;line-height:1.7;color:var(--me-text-secondary);white-space:pre-line;border-top:1px solid var(--me-border);padding:9px 5px 0;margin-top:9px}
-.model-picker button:focus-visible{outline:2px solid var(--me-focus);outline-offset:-1px}
 .field-error{display:block;max-width:240px;font-size:12px;color:var(--me-danger);margin-top:5px}
 .field-error:empty{display:none}
 .input[aria-invalid="true"]{border-color:var(--me-danger)}
@@ -280,9 +246,6 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .source{display:inline-block;max-width:100%;font-size:11px;color:var(--me-text-secondary);margin-top:6px;padding:3px 10px;border:1px solid var(--me-border-strong);border-radius:14px;line-height:1.6;overflow-wrap:anywhere}
 .empty-list{color:var(--me-text-secondary);padding:14px 8px}
 #buildLabel{font-size:10px;color:var(--me-text-secondary)}
-.model-picker{align-items:center}.model-picker button{white-space:nowrap}
-.reasoning-menu{max-width:calc(100vw - 40px)}
-.usage-tooltip{pointer-events:none;max-width:280px}
 /* Keep the embedded editor's dialogs and save actions within its viewport. */
 .feature-meaning-frame{display:block;width:100%;height:calc(100dvh - 210px);min-height:620px;border:0;border-radius:12px;background:var(--me-surface)}
 #wordMeaningPanel[hidden],#standardGenerationPanel[hidden],#standardWorksheetList[hidden]{display:none!important}
@@ -331,7 +294,6 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .search-field>span[aria-hidden]{position:absolute;left:13px;display:flex;align-items:center;color:var(--me-text-secondary);line-height:1}
 .search-field input{padding-left:38px;font-size:13px}
 .management-toolbar select{font-size:13px}
-.management-table th:first-child,.management-table td:first-child{width:auto;min-width:250px;white-space:normal}
 .management-table strong{font-size:13px;font-weight:600}
 .table-subtitle{display:block;font-size:11px;color:var(--me-text-secondary);margin-top:4px}
 .table-actions{display:flex;gap:6px}
@@ -441,7 +403,7 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .management-table .management-col-check{width:44px}.management-table .management-col-number{width:56px}
 .management-table .management-col-title,.management-table .management-col-range,.management-table .management-col-count,.management-table .management-col-date{width:auto}
 .management-table .management-col-actions{width:1%}
-.management-table.me-table th:first-child,.management-table.me-table td:first-child{width:44px;min-width:0;padding-inline:8px;text-align:center}
+.management-table.me-table th:first-child,.management-table.me-table td:first-child{width:44px;min-width:0;padding-inline:8px;text-align:center;white-space:normal}
 .management-table th:nth-child(2),.management-table td:nth-child(2){text-align:center}
 .management-table.me-table th,.management-table.me-table td{padding-inline:14px;overflow-wrap:anywhere}
 .management-table td:nth-child(3),.management-table td:nth-child(4){white-space:normal;overflow-wrap:anywhere}
@@ -453,7 +415,28 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .management-table td:nth-child(3) strong{display:block}
 .management-table .table-actions{flex-wrap:nowrap}
 .management-table .table-actions>*{flex-shrink:0}
-.management-table input[type=checkbox]{width:17px;height:17px;accent-color:var(--me-primary)}
+.management-table input[type=checkbox]{width:17px;height:17px;accent-color:var(--me-focus)}
 .management-toolbar{flex-wrap:wrap}.worksheet-delete-progress{padding:12px;background:var(--me-surface-subtle,var(--me-bg));border-radius:8px}
 
 .feature-meaning-frame[hidden]{display:none!important}
+
+.paper-mini{background:#fff;color:#111;border-radius:4px;box-shadow:0 6px 22px rgba(0,0,0,.18);padding:14px 13px 18px;font-size:11px;line-height:1.5}
+.mini-cols{columns:2;column-gap:8mm;column-fill:balance;margin-top:10px}
+.mini-qb{break-inside:avoid;margin-bottom:11px;text-align:justify}
+.mini-qh{display:flex;gap:5px;margin-bottom:3px}
+.mini-qh .no{font-weight:700}
+.mini-cir{margin-right:2px}
+.mini-rule{border-top:1px solid #111;margin:4px 0}
+.mini-ex{padding:1px 0;white-space:pre-wrap}
+.mini-qh>span:last-child{white-space:pre-wrap}
+.mini-choices{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:3px}
+.mini-pairs .p{display:grid;grid-template-columns:15px 84px 12px 1fr;align-items:baseline;padding:1px 0}
+.mini-defg{display:grid;grid-template-columns:auto auto auto 1fr;column-gap:4px;row-gap:3px;align-items:baseline}
+.mini-defg .colon{text-align:center;padding:0 5px}
+.mini-ans-head{font-weight:500}
+.mini-ans-two{display:flex;align-items:flex-start}
+.mini-ans-l{width:44%;padding-right:3mm}
+.mini-ans-r{width:56%;padding-left:3mm}
+.mini-ans-line{margin-bottom:6px}
+.mini-ans-exp{display:flex;gap:5px;margin-bottom:6px}
+.mini-ans-exp .an{font-weight:700}

@@ -29,9 +29,6 @@ class SubscriptionError(RuntimeError):
 
 
 _lock = threading.RLock()
-_cache = None
-_cache_until = 0.0
-_approved_generation_handler = None
 
 _SAFE_ERROR_CODES = frozenset({
     "model_not_found", "unsupported_model", "unsupported_reasoning_effort",
@@ -128,6 +125,17 @@ def parse_limits(result):
     }
 
 
+def _validate_login(raw):
+    try:
+        auth = json.loads(raw)
+        tokens = auth.get("tokens") if isinstance(auth, dict) else None
+        access_token = tokens.get("access_token") if isinstance(tokens, dict) else None
+        if not isinstance(access_token, str) or not access_token or auth.get("auth_mode") != "chatgpt":
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise SubscriptionError("ChatGPT 구독 로그인이 필요합니다. API 키 연결은 사용할 수 없습니다.") from None
+
+
 class CredentialStore:
     def __init__(self):
         self.session = None
@@ -150,12 +158,7 @@ class CredentialStore:
             raw = Path(config.CODEX_AUTH_FILE).read_bytes()
         else:
             raise SubscriptionError("GPT 계정이 아직 연결되지 않았습니다.")
-        try:
-            auth = json.loads(raw)
-            if auth.get("auth_mode") != "chatgpt" or not auth.get("tokens", {}).get("access_token"):
-                raise ValueError()
-        except (ValueError, KeyError, TypeError):
-            raise SubscriptionError("ChatGPT 구독 로그인이 필요합니다. API 키 연결은 사용할 수 없습니다.") from None
+        _validate_login(raw)
         return raw
 
     def save(self, raw):
@@ -177,7 +180,7 @@ class CredentialStore:
                 except Exception:
                     logging.warning("GPT previous credential version cleanup unavailable")
             self.version = response.json()["name"]
-        else:
+        elif config.CODEX_AUTH_FILE:
             target = Path(config.CODEX_AUTH_FILE)
             temporary = target.with_suffix(".pending")
             temporary.write_bytes(raw)
@@ -334,22 +337,12 @@ class CodexSession:
                 stream.close()
 
 
-@contextlib.contextmanager
-def session(*, store=None, temp_root=None, before_persist=None, validate_auth=None, expected_email=None):
-    store = store or CredentialStore()
-    original = store.load()
-    if temp_root is not None:
-        Path(temp_root).mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="melody-gpt-", dir=temp_root) as directory:
-        root = Path(directory)
-        home, workspace = root / "account", root / "workspace"
-        home.mkdir(mode=0o700)
-        workspace.mkdir(mode=0o700)
-        auth_file = home / "auth.json"
-        auth_file.write_bytes(original)
-        auth_file.chmod(0o600)
-        (home / "config.toml").write_text('''forced_login_method = "chatgpt"
-cli_auth_credentials_store = "file"
+def _write_codex_config(home: Path, *, credentials_store: str, forced_chatgpt: bool = False) -> None:
+    """격리된 Codex 실행 홈 디렉터리에 도구가 비활성화된 최소 config.toml을 작성한다."""
+    lines = []
+    if forced_chatgpt:
+        lines.append('forced_login_method = "chatgpt"')
+    lines.append(f'''cli_auth_credentials_store = "{credentials_store}"
 web_search = "disabled"
 project_doc_max_bytes = 0
 approval_policy = "never"
@@ -371,55 +364,52 @@ computer_use = false
 ":workspace_roots" = "read"
 [permissions.worksheet.network]
 enabled = false
-''', encoding="utf-8")
-        client = None
+''')
+    (home / "config.toml").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _save_refreshed_login(auth_file, original, store, validate_auth, before_persist):
+    updated = auth_file.read_bytes()
+    if updated == original:
+        return
+    _validate_login(updated)
+    if validate_auth is not None:
+        validate_auth(updated)
+    if before_persist is not None:
+        before_persist()
+    store.save(updated)
+
+
+@contextlib.contextmanager
+def session(*, store=None, temp_root=None, before_persist=None, validate_auth=None, expected_email=None):
+    store = store or CredentialStore()
+    original = store.load()
+    if temp_root is not None:
+        Path(temp_root).mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="melody-gpt-", dir=temp_root) as directory:
+        root = Path(directory)
+        home, workspace = root / "account", root / "workspace"
+        home.mkdir(mode=0o700)
+        workspace.mkdir(mode=0o700)
+        auth_file = home / "auth.json"
+        auth_file.write_bytes(original)
+        auth_file.chmod(0o600)
+        _write_codex_config(home, credentials_store="file", forced_chatgpt=True)
+        client = CodexSession(home, workspace, expected_email=expected_email)
+        body_failed = False
         try:
-            client = CodexSession(home, workspace, expected_email=expected_email) if expected_email else CodexSession(home, workspace)
             yield client
+        except BaseException:
+            body_failed = True
+            raise
         finally:
-            if client:
+            try:
                 client.close()
-            updated = auth_file.read_bytes()
-            if updated != original:
-                if validate_auth is not None:
-                    validate_auth(updated)
-                if before_persist is not None:
-                    before_persist()
-                store.save(updated)
-
-
-def get_status(force=False):
-    global _cache, _cache_until
-    if getattr(config, "IMPORT_ENGINE_ENABLED", False):
-        # A status poll must never open the managed-token session while the
-        # host owns authentication. Only generation updates this cached view.
-        if _cache:
-            return {**_cache, "stale": True, "message": "호스트 연결에서 최근 확인한 사용량입니다."}
-        return {"connected": None, "model": config.GPT_MODEL, "weekly_remaining_percent": None,
-                "weekly_resets_at": None, "checked_at": None, "stale": True,
-                "message": "호스트 인증 연결을 사용합니다. 생성 시 사용량을 확인합니다."}
-    # Never queue a hover request behind a several-minute generation.
-    if not _lock.acquire(blocking=False):
-        if _cache:
-            return {**_cache, "stale": True, "message": "생성 중 · 최근 확인한 사용량입니다."}
-        return {"connected": None, "model": config.GPT_MODEL, "weekly_remaining_percent": None,
-                "message": "생성 중입니다. 완료 후 사용량을 확인해 주세요."}
-    try:
-        if not force and _cache and time.monotonic() < _cache_until:
-            return _cache.copy()
-        try:
-            with session() as client:
-                _cache = client.limits()
-        except SubscriptionError as error:
-            _cache = {"connected": False, "model": config.GPT_MODEL, "weekly_remaining_percent": None,
-                      "weekly_resets_at": None, "checked_at": None, "message": str(error)}
-        except Exception:
-            _cache = {"connected": False, "model": config.GPT_MODEL, "weekly_remaining_percent": None,
-                      "weekly_resets_at": None, "checked_at": None, "message": "GPT 사용량을 조회하지 못했습니다. 잠시 후 다시 확인하세요."}
-        _cache_until = time.monotonic() + 30
-        return _cache.copy()
-    finally:
-        _lock.release()
+                _save_refreshed_login(auth_file, original, store, validate_auth, before_persist)
+            except Exception:
+                if not body_failed:
+                    raise
+                logging.warning("GPT session cleanup failed after a session error")
 
 
 def import_auth_confirmed():
@@ -427,47 +417,17 @@ def import_auth_confirmed():
                 or getattr(config, "IMPORT_PERSONAL_USE_CONFIRMED", False))
 
 
-def set_approved_generation_handler(callback):
-    """Install the host path explicitly; clearing never re-enables managed auth.
-
-    The application supplies account-wide slots and the approved pool in this
-    callback. Configuration validation performs no credential or network I/O.
-    """
-    global _approved_generation_handler
-    if callback is None:
-        _approved_generation_handler = None
-        return
-    if not callable(callback):
-        raise ValueError("Approved generation callback must be callable")
-    if (not getattr(config, "IMPORT_ENGINE_ENABLED", False)
-            or not import_auth_confirmed()
-            or config.GPT_MODEL != "gpt-6.1-sol"
-            or config.GPT_REASONING_DEFAULT != "high"):
-        raise SubscriptionError("승인된 GPT-6.1 Sol / High 호스트 연결 설정을 확인해 주세요.")
-    _approved_generation_handler = callback
-
-
 def generate(system, prompt, effort, schema):
-    global _cache, _cache_until
     if effort not in config.GPT_REASONING_LEVELS:
         raise ValueError("추론 수준은 Light, Medium, High, XHigh 중 선택하세요.")
     if getattr(config, "IMPORT_ENGINE_ENABLED", False):
-        handler = _approved_generation_handler
-        if handler is None:
-            raise SubscriptionError("승인된 호스트 생성 연결이 준비되지 않았습니다.")
-        if effort != "high":
-            raise SubscriptionError("호스트 학습 생성은 High 추론을 사용합니다.")
-        return handler(system, prompt, effort, schema)
+        raise SubscriptionError("호스트 인증 경로에서는 승인된 등록 작업자를 통해서만 생성할 수 있습니다.")
     with _lock:
         with session() as client:
-            _cache = client.limits()
-            _cache_until = time.monotonic() + 30
-            if _cache["blocked"]:
-                raise SubscriptionError(_cache["message"], 429)
-            try:
-                return client.generate(system, prompt, effort, schema)
-            finally:
-                _cache_until = 0
+            limits = client.limits()
+            if limits["blocked"]:
+                raise SubscriptionError(limits["message"], 429)
+            return client.generate(system, prompt, effort, schema)
 
 
 class ExternalAuthCoordinator:
@@ -516,29 +476,7 @@ def external_session(auth, *, temp_root):
     with tempfile.TemporaryDirectory(prefix="learning-session-", dir=root) as directory:
         home, workspace = Path(directory) / "account", Path(directory) / "workspace"
         home.mkdir(mode=0o700); workspace.mkdir(mode=0o700)
-        (home / "config.toml").write_text('''cli_auth_credentials_store = "ephemeral"
-web_search = "disabled"
-project_doc_max_bytes = 0
-approval_policy = "never"
-default_permissions = "worksheet"
-service_tier = "default"
-[history]
-persistence = "none"
-[features]
-shell_tool = false
-unified_exec = false
-shell_snapshot = false
-apply_patch_freeform = false
-multi_agent = false
-code_mode = false
-browser_use = false
-computer_use = false
-[permissions.worksheet.filesystem]
-":minimal" = "read"
-":workspace_roots" = "read"
-[permissions.worksheet.network]
-enabled = false
-''', encoding="utf-8")
+        _write_codex_config(home, credentials_store="ephemeral", forced_chatgpt=False)
         client = CodexSession(home, workspace, external_auth=auth)
         try:
             yield client
@@ -570,7 +508,6 @@ class SessionPool:
             manager.__exit__(None, None, None)
 
     def generate(self, system, prompt, effort, schema, *, cancel_event=None):
-        global _cache, _cache_until
         if self.closed.is_set():
             raise SubscriptionError("학습 생성 연결이 종료되었습니다.")
         if effort != "high":
@@ -601,7 +538,6 @@ class SessionPool:
                 watcher = threading.Thread(target=watch_cancel, daemon=True, name="learning-cancel")
                 watcher.start()
             limits = client.limits()
-            _cache, _cache_until = dict(limits), time.monotonic() + 30
             if limits.get("blocked"):
                 raise SubscriptionError("사용량 한도에 도달했습니다. 한도 초기화 후 다시 생성하세요.", 429)
             result = client.generate(system, prompt, effort, schema)

@@ -8,13 +8,14 @@ from __future__ import annotations
 from contextlib import contextmanager
 from copy import deepcopy
 import hashlib
+from pathlib import Path
 import threading
 import time
 import uuid
 
 from . import ai_importer
 from .import_engine import (ENGINE_VERSION, PREPARATION_POLICY, EngineError, LearningEngine, LearningReviewRequired, SourceChanged,
-    WorkBusy, assert_source_ready, before_review, build_manifest, digest, generation_eligible, generation_version, input_fingerprint)
+    WorkBusy, _heartbeat_loop, assert_source_ready, before_review, build_manifest, digest, generation_eligible, generation_version, input_fingerprint)
 from .source_integrity import (assert_source_manifest, freeze_source_manifest,
     merge_manual_edits, refresh_bank_state)
 from .storage import ConflictError, now
@@ -36,7 +37,9 @@ class _PrepareLease:
             raise WorkBusy('원문 처리 실행 소유권이 변경되었습니다.')
 
     def assert_owned(self):
-        self.check(self.coordinator.store.get(self.key))
+        record = self.coordinator.store.get(self.key)
+        self.check(record)
+        return record
 
 
 class DurableImportCoordinator:
@@ -309,17 +312,24 @@ class DurableImportCoordinator:
             raise EngineError('새 등록 방식의 작업이 아닙니다.')
         return job
 
+    def stage_prepare(self, job_id, *, linked_original=None):
+        key = 'prepare/' + job_id
+        def stage(values):
+            record = values[key]
+            if record and (not linked_original or linked_original in record.get('legacy_original_ids', [])):
+                return {}, record
+            if record is None:
+                record = {'job_id': job_id, 'state': 'pending', 'claim': None, 'generation': 0,
+                          'enqueued_at': None, 'created_at': self.clock()}
+            if linked_original:
+                record.setdefault('legacy_original_ids', []).append(linked_original)
+            return {key: record}, record
+        return self.store.atomic([key], stage)
+
     def enqueue_prepare(self, job):
         job_id = job['id']
         key = 'prepare/' + job_id
-        def stage(values):
-            previous = values[key]
-            if previous:
-                return {}, previous
-            value = {'job_id': job_id, 'state': 'pending', 'claim': None, 'generation': 0,
-                     'enqueued_at': None, 'created_at': self.clock()}
-            return {key: value}, value
-        pending = self.store.atomic([key], stage)
+        pending = self.stage_prepare(job_id)
         if pending['state'] in {'complete', 'needs_review'}:
             return
         self.dispatcher.enqueue({'kind': 'prepare', 'job_id': job_id, 'generation': pending['generation']})
@@ -352,36 +362,26 @@ class DurableImportCoordinator:
             record.update(state='running', claim=claim)
             return {key: record, account_key: account}, token
         owned = self.store.atomic([key, account_key], acquire)
-        cancelled, stop = threading.Event(), threading.Event()
+        cancelled = threading.Event()
         owner = _PrepareLease(self, key, token, cancelled)
-        def maintain():
-            while not stop.wait(30):
-                try:
-                    def renew(values):
-                        record, account = values[key], values[account_key]
-                        owner.check(record)
-                        timestamp = self.clock()
-                        record['claim']['expires_at'] = timestamp + 900
-                        matches = [s for s in account['slots'] if s['token'] == token]
-                        if len(matches) != 1 or matches[0]['expires_at'] <= timestamp:
-                            raise WorkBusy('원문 처리 슬롯을 확인하지 못했습니다.')
-                        matches[0]['expires_at'] = timestamp + 900
-                        return {key: record, account_key: account}, None
-                    self.store.atomic([key, account_key], renew)
-                except Exception:
-                    cancelled.set()
-                    return
-        thread = threading.Thread(target=maintain, daemon=True, name='source-lease')
-        if owned:
-            thread.start()
+        def renew(values):
+            record, account = values[key], values[account_key]
+            owner.check(record)
+            timestamp = self.clock()
+            record['claim']['expires_at'] = timestamp + 900
+            matches = [s for s in account['slots'] if s['token'] == token]
+            if len(matches) != 1 or matches[0]['expires_at'] <= timestamp:
+                raise WorkBusy('원문 처리 슬롯을 확인하지 못했습니다.')
+            matches[0]['expires_at'] = timestamp + 900
+            return {key: record, account_key: account}, None
         try:
-            yield owner if owned else None
-            if owned:
-                owner.assert_owned()
+            with _heartbeat_loop(30, lambda: self.store.atomic([key, account_key], renew),
+                                 name='source-lease', on_error=cancelled.set, enabled=bool(owned)):
+                yield owner if owned else None
+                if owned:
+                    owner.assert_owned()
         finally:
-            stop.set()
             if owned:
-                thread.join(timeout=1)
                 def release(values):
                     record, account = values[key], values[account_key]
                     writes = {}
@@ -558,7 +558,8 @@ class DurableImportCoordinator:
                             parts.append(part)
                         base = self._merge_source_chunks(base, parts)
                     bank = deepcopy(base)
-                    bank.update(id=bank_id, title=job['payload']['filename'].rsplit('.', 1)[0], storage='drive')
+                    # 공백 파일명이어도 Drive 발행 단계에서 빈 제목 오류가 나지 않도록 기본 제목을 둔다.
+                    bank.update(id=bank_id, title=Path(job['payload']['filename']).stem.strip() or '단어장', storage='drive')
                     bank['source'].update(filename=job['payload']['filename'], stored_name=job['payload']['stored_name'])
                     if job['payload'].get('original_id'):
                         bank['source']['original_id'] = job['payload']['original_id']
@@ -576,7 +577,7 @@ class DurableImportCoordinator:
                     # State JSON is durable and editable; Sheets are published
                     # after all learning succeeds. Existing IDs are not replaced.
                     with self.service.lock, self.service.bank_write_context(bank_id):
-                        owner.assert_owned()
+                        prepare_record = owner.assert_owned()
                         self.service.assert_bank_write_ownership()
                         if review_previous is not None:
                             from .registration_review import replace_source
@@ -605,6 +606,11 @@ class DurableImportCoordinator:
                                 self._set_prepare(job_id, owner=owner, state='complete')
                                 return self.read_job(job_id)
                         else:
+                            # 판독 중 연결된 원본도 같은 단어장 리스 안에서 최신 상태로 합친다.
+                            payload = self._job(job_id)['payload']
+                            linked_ids = payload.get('legacy_original_ids', []) + prepare_record.get('legacy_original_ids', [])
+                            if linked_ids:
+                                bank['source']['legacy_original_ids'] = list(dict.fromkeys(linked_ids))
                             bank = self.service.store.put_metadata('banks', bank, expected_version=0)
                         owner.assert_owned()
                 if before_review(job):

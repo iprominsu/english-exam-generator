@@ -74,52 +74,9 @@ class TesseractOCR:
         return tokens
 
 
-class TesseractJsOCR:
-    """Project-local WebAssembly OCR fallback for machines without Tesseract."""
-
-    def __init__(self, node: str | None = None, timeout: int = 300):
-        self.project_root = Path(__file__).resolve().parents[1]
-        self.node = node or os.environ.get("TESSERACT_JS_NODE") or shutil.which("node")
-        self.timeout = timeout
-        self.worker_script = Path(__file__).with_name("ocr_worker.cjs")
-        self.data_path = self.project_root / ".local" / "ocr" / "tessdata"
-
-    @property
-    def available(self) -> bool:
-        package = self.project_root / ".local" / "ocr" / "node_modules" / "tesseract.js"
-        return bool(self.node and self.worker_script.is_file() and package.is_dir()
-                    and all((self.data_path / f"{lang}.traineddata.gz").is_file()
-                            or (self.data_path / f"{lang}.traineddata").is_file() for lang in ("kor", "eng")))
-
-    def recognize(self, image_path: Path) -> list[dict]:
-        if not self.available:
-            raise PDFImportError("ocr_unavailable", "프로젝트의 한국어·영어 OCR 설치가 필요합니다.")
-        try:
-            result = subprocess.run([self.node, str(self.worker_script), str(image_path)],
-                                    cwd=self.project_root, check=True, capture_output=True,
-                                    text=True, encoding="utf-8", timeout=self.timeout,
-                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise PDFImportError("ocr_failed", "프로젝트 OCR 실행에 실패했습니다. 설치 상태와 언어 데이터를 확인하세요.") from exc
-        tokens = []
-        for row in csv.DictReader(io.StringIO(result.stdout), delimiter="\t"):
-            if not row.get("text", "").strip():
-                continue
-            try:
-                tokens.append({"text": row["text"], "left": float(row["left"]), "top": float(row["top"]),
-                               "width": float(row["width"]), "height": float(row["height"]),
-                               "confidence": float(row["conf"])})
-            except (KeyError, ValueError) as exc:
-                raise PDFImportError("ocr_invalid_output", "OCR 위치 정보가 올바르지 않습니다.") from exc
-        return tokens
-
-
 def _default_ocr_engine():
-    native = TesseractOCR()
-    if native.executable:
-        return native
-    local = TesseractJsOCR()
-    return local if local.available else native
+    """기본 네이티브 한국어·영어 Tesseract OCR 엔진을 반환한다."""
+    return TesseractOCR()
 
 
 def _stable_id(prefix: str, *parts) -> str:

@@ -179,6 +179,30 @@ def cache_key(entry, spec):
                    "lexical_context": {k: entry.get(k) for k in ("pos", "part_of_speech", "context")}, "spec": spec})
 
 
+@contextmanager
+def _heartbeat_loop(interval, callback, *, name, on_error=None, enabled=True):
+    """백그라운드 데몬 스레드로 리스 갱신을 반복 실행하고 종료 시 안전하게 합류한다."""
+    if not enabled:
+        yield
+        return
+    stop = threading.Event()
+    def maintain():
+        while not stop.wait(interval):
+            try:
+                callback()
+            except Exception:
+                if on_error is not None:
+                    on_error()
+                return
+    thread = threading.Thread(target=maintain, daemon=True, name=name)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1)
+
+
 class MemoryStateStore:
     """Deterministic offline transaction store; never used as production fallback."""
     durable = False
@@ -285,7 +309,7 @@ def distributed_lease(store, key, *, lease_seconds=900, heartbeat_seconds=30, cl
     """
     if not key.startswith("lease/") or not 30 <= lease_seconds <= 1800 or not 1 <= heartbeat_seconds < lease_seconds / 2:
         raise ValueError("Invalid shared lease")
-    token, stop = uuid.uuid4().hex, threading.Event()
+    token = uuid.uuid4().hex
     handle = DurableLease(store, key, token, clock)
     def acquire(values):
         existing = values[key]
@@ -299,21 +323,12 @@ def distributed_lease(store, key, *, lease_seconds=900, heartbeat_seconds=30, cl
             raise LeaseLost("공유 저장 실행 상태가 바뀌었습니다.")
         value["expires_at"] = clock() + lease_seconds
         return {key: value}, None
-    def maintain():
-        while not stop.wait(heartbeat_seconds):
-            try:
-                store.atomic([key], renew)
-            except Exception:
-                handle.cancelled.set()
-                return
-    thread = threading.Thread(target=maintain, daemon=True, name="bank-write-lease")
-    thread.start()
     try:
-        yield handle
-        handle.assert_owned()
+        with _heartbeat_loop(heartbeat_seconds, lambda: store.atomic([key], renew),
+                             name="bank-write-lease", on_error=handle.cancelled.set):
+            yield handle
+            handle.assert_owned()
     finally:
-        stop.set()
-        thread.join(timeout=1)
         def release(values):
             value = values[key]
             return ({key: None} if value and value.get("token") == token else {}), None
@@ -326,7 +341,7 @@ def account_generation_slot(store, account_key, job_id, *, lease_seconds=900, he
     if not account_key or not 30 <= lease_seconds <= 1800 or not 1 <= heartbeat_seconds < lease_seconds / 2:
         raise ValueError("Invalid shared account slot configuration")
     key, token = "account/" + digest(account_key), uuid.uuid4().hex
-    cancelled, stopped = threading.Event(), threading.Event()
+    cancelled = threading.Event()
     def acquire(values):
         account = values[key] or {"slots": []}
         account["slots"] = [slot for slot in account["slots"] if slot["expires_at"] > clock()]
@@ -343,22 +358,13 @@ def account_generation_slot(store, account_key, job_id, *, lease_seconds=900, he
             raise LeaseLost("계정 실행 슬롯이 변경되었습니다.")
         slot["expires_at"] = clock() + lease_seconds
         return {key: account}, None
-    def heartbeat():
-        while not stopped.wait(heartbeat_seconds):
-            try:
-                store.atomic([key], renew)
-            except Exception:
-                cancelled.set()
-                return
-    thread = threading.Thread(target=heartbeat, daemon=True, name="source-account-lease")
-    thread.start()
     try:
-        yield cancelled
-        if cancelled.is_set():
-            raise LeaseLost("계정 실행 소유권을 확인할 수 없습니다.")
+        with _heartbeat_loop(heartbeat_seconds, lambda: store.atomic([key], renew),
+                             name="source-account-lease", on_error=cancelled.set):
+            yield cancelled
+            if cancelled.is_set():
+                raise LeaseLost("계정 실행 소유권을 확인할 수 없습니다.")
     finally:
-        stopped.set()
-        thread.join(timeout=1)
         def release(values):
             account = values[key]
             if not account:
@@ -598,49 +604,39 @@ class LearningEngine:
         if claimed is None:
             return {"state": "complete", "reused_complete_batch": True}
         job, batch, token = claimed
-        cancelled, stop = threading.Event(), threading.Event()
-        def maintain():
-            while not stop.wait(self.heartbeat_seconds):
-                try:
-                    self._heartbeat(job, batch_id, token)
-                except Exception:
-                    cancelled.set()
-                    return
-        thread = threading.Thread(target=maintain, daemon=True, name="learning-lease")
-        thread.start()
+        cancelled = threading.Event()
         try:
-            all_inputs, spec = batch["inputs"], job["manifest"]["spec"]
-            if digest(all_inputs) != batch["input_hash"]:
-                raise EngineError("학습 묶음의 원문 기준표가 변경되었습니다.")
-            inputs = [e for e in all_inputs if generation_eligible(e)] if before_review(job['manifest']) else all_inputs
-            learning, missing = {}, []
-            for entry in inputs:
-                cached = self.store.get("cache/" + cache_key(entry, spec)) if self.reuse else None
-                if cached:
-                    try:
-                        rebound = {**deepcopy(entry), "learning": deepcopy(cached["learning"])}
-                        if self.rebind_cache is not None:
-                            rebound = self.rebind_cache(rebound)
-                        learning.update(self._validated([entry], [rebound], spec))
-                        continue
-                    except (EngineError, ValueError, KeyError, TypeError):
-                        pass
-                missing.append(entry)
-            if missing:
-                options = {'spec': deepcopy(spec)} if self.versioned_provider else {}
-                outputs = self.provider(deepcopy(missing), cancel_event=cancelled, **options)
-                learning.update(self._validated(missing, outputs, spec))
-            if cancelled.is_set():
-                raise LeaseLost("학습 묶음 실행 중 소유권 확인에 실패했습니다.")
-            self._assert_current(job, batch)
-            self._complete_batch(job, batch, token, learning)
-            return {"state": "complete", "generated": len(missing), "reused": len(inputs) - len(missing)}
+            with _heartbeat_loop(self.heartbeat_seconds, lambda: self._heartbeat(job, batch_id, token),
+                                 name="learning-lease", on_error=cancelled.set):
+                all_inputs, spec = batch["inputs"], job["manifest"]["spec"]
+                if digest(all_inputs) != batch["input_hash"]:
+                    raise EngineError("학습 묶음의 원문 기준표가 변경되었습니다.")
+                inputs = [e for e in all_inputs if generation_eligible(e)] if before_review(job['manifest']) else all_inputs
+                learning, missing = {}, []
+                for entry in inputs:
+                    cached = self.store.get("cache/" + cache_key(entry, spec)) if self.reuse else None
+                    if cached:
+                        try:
+                            rebound = {**deepcopy(entry), "learning": deepcopy(cached["learning"])}
+                            if self.rebind_cache is not None:
+                                rebound = self.rebind_cache(rebound)
+                            learning.update(self._validated([entry], [rebound], spec))
+                            continue
+                        except (EngineError, ValueError, KeyError, TypeError):
+                            pass
+                    missing.append(entry)
+                if missing:
+                    options = {'spec': deepcopy(spec)} if self.versioned_provider else {}
+                    outputs = self.provider(deepcopy(missing), cancel_event=cancelled, **options)
+                    learning.update(self._validated(missing, outputs, spec))
+                if cancelled.is_set():
+                    raise LeaseLost("학습 묶음 실행 중 소유권 확인에 실패했습니다.")
+                self._assert_current(job, batch)
+                self._complete_batch(job, batch, token, learning)
+                return {"state": "complete", "generated": len(missing), "reused": len(inputs) - len(missing)}
         except Exception as error:
             self._record_failure(job, batch, token, error)
             raise
-        finally:
-            stop.set()
-            thread.join(timeout=1)
 
     def _complete_batch(self, job, batch, token, learning):
         job_key = self._job(job["id"])
@@ -727,78 +723,71 @@ class LearningEngine:
         if claimed is None:
             return self.status(job_id)
         job = claimed
-        stopped, lost = threading.Event(), threading.Event()
+        lost = threading.Event()
         def renew_publication(values):
             current = values[key]
             self._owned(current, token)
             current["claim"]["expires_at"] = self.clock() + self.lease_seconds
             return {key: current}, None
-        def heartbeat():
-            while not stopped.wait(self.heartbeat_seconds):
-                try:
-                    self.store.atomic([key], renew_publication)
-                except Exception:
-                    lost.set()
-                    return
-        thread = threading.Thread(target=heartbeat, daemon=True, name="learning-publication-lease")
-        thread.start()
         try:
-            # Completed batch documents are immutable. Read large result sets
-            # outside the short transaction instead of exceeding its size limit.
-            batches = [self.store.get(k) for k in batch_keys]
-            if any(not b or b["state"] != "complete" for b in batches):
-                raise EngineError("완료된 학습 묶음을 확인할 수 없습니다.")
-            entries = []
-            for batch in batches:
-                if digest(batch["inputs"]) != batch["input_hash"] or digest(batch["learning"]) != batch["result_hash"]:
-                    raise EngineError("저장된 학습자료를 검증할 수 없습니다.")
-                targets = [e for e in batch['inputs'] if generation_eligible(e)] if before_review(job['manifest']) else batch['inputs']
-                if set(batch['learning']) != {e['id'] for e in targets}:
-                    raise EngineError('저장된 학습자료의 생성 대상이 일치하지 않습니다.')
-                outputs = [{**deepcopy(e), **({'learning': deepcopy(batch['learning'][e['id']])}
-                    if e['id'] in batch['learning'] else {})} for e in batch['inputs']]
-                self._validated(targets, [e for e in outputs if e['id'] in batch['learning']], job['manifest']['spec'])
-                entries.extend(outputs)
-            manifest = deepcopy(job["manifest"])
-            manifest["bank"]["entries"] = [{k: deepcopy(v) for k, v in e.items() if k != "learning"} for e in entries]
-            source_rows = sorted((row for b in batches for row in b["source_rows"]), key=lambda row: row["index"])
-            manifest["bank"]["source_manifest"]["entries"] = [deepcopy(row["entry"]) for row in source_rows]
-            manifest["input_fingerprints"] = [input_fingerprint(e) for e in manifest["bank"]["entries"]]
-            if digest({k: v for k, v in manifest.items() if k != "sha256"}) != manifest["sha256"]:
-                raise EngineError("최종 원문 기준표가 일치하지 않습니다.")
-            self._assert_current(job)
-            if lost.is_set():
-                raise LeaseLost("최종 저장 실행 소유권을 확인할 수 없습니다.")
-            # Retain an acknowledged publication receipt before readback. If
-            # that read fails, retry verification, not Drive publication or AI.
-            receipt = job.get("pending_receipt")
-            if receipt is None:
-                self.store.atomic([key], renew_publication)
-                receipt = self.publish(manifest, deepcopy(entries), job_id)
-                def remember(values):
+            with _heartbeat_loop(self.heartbeat_seconds, lambda: self.store.atomic([key], renew_publication),
+                                 name="learning-publication-lease", on_error=lost.set):
+                # Completed batch documents are immutable. Read large result sets
+                # outside the short transaction instead of exceeding its size limit.
+                batches = [self.store.get(k) for k in batch_keys]
+                if any(not b or b["state"] != "complete" for b in batches):
+                    raise EngineError("완료된 학습 묶음을 확인할 수 없습니다.")
+                entries = []
+                for batch in batches:
+                    if digest(batch["inputs"]) != batch["input_hash"] or digest(batch["learning"]) != batch["result_hash"]:
+                        raise EngineError("저장된 학습자료를 검증할 수 없습니다.")
+                    targets = [e for e in batch['inputs'] if generation_eligible(e)] if before_review(job['manifest']) else batch['inputs']
+                    if set(batch['learning']) != {e['id'] for e in targets}:
+                        raise EngineError('저장된 학습자료의 생성 대상이 일치하지 않습니다.')
+                    outputs = [{**deepcopy(e), **({'learning': deepcopy(batch['learning'][e['id']])}
+                        if e['id'] in batch['learning'] else {})} for e in batch['inputs']]
+                    self._validated(targets, [e for e in outputs if e['id'] in batch['learning']], job['manifest']['spec'])
+                    entries.extend(outputs)
+                manifest = deepcopy(job["manifest"])
+                manifest["bank"]["entries"] = [{k: deepcopy(v) for k, v in e.items() if k != "learning"} for e in entries]
+                source_rows = sorted((row for b in batches for row in b["source_rows"]), key=lambda row: row["index"])
+                manifest["bank"]["source_manifest"]["entries"] = [deepcopy(row["entry"]) for row in source_rows]
+                manifest["input_fingerprints"] = [input_fingerprint(e) for e in manifest["bank"]["entries"]]
+                if digest({k: v for k, v in manifest.items() if k != "sha256"}) != manifest["sha256"]:
+                    raise EngineError("최종 원문 기준표가 일치하지 않습니다.")
+                self._assert_current(job)
+                if lost.is_set():
+                    raise LeaseLost("최종 저장 실행 소유권을 확인할 수 없습니다.")
+                # Retain an acknowledged publication receipt before readback. If
+                # that read fails, retry verification, not Drive publication or AI.
+                receipt = job.get("pending_receipt")
+                if receipt is None:
+                    self.store.atomic([key], renew_publication)
+                    receipt = self.publish(manifest, deepcopy(entries), job_id)
+                    def remember(values):
+                        current = values[key]
+                        self._owned(current, token)
+                        current["pending_receipt"] = receipt
+                        return {key: current}, None
+                    self.store.atomic([key], remember)
+                published = self.readback(receipt)
+                if generation_version(published, preparation_policy=manifest.get('preparation_policy', 'after_review_v1')) != manifest["source_version"]:
+                    raise SourceChanged("최종 저장 원문이 생성 기준과 다릅니다.")
+                target_ids = {e['id'] for e in entries if 'learning' in e}
+                stored = {e["id"]: e.get("learning") for e in published["entries"] if e['id'] in target_ids}
+                expected = {e["id"]: e["learning"] for e in entries if e['id'] in target_ids}
+                if digest(stored) != digest(expected):
+                    raise EngineError("최종 저장 학습자료가 검증 결과와 다릅니다.")
+                self._assert_current(job)
+                if lost.is_set():
+                    raise LeaseLost("최종 저장 실행 소유권을 확인할 수 없습니다.")
+                def done(values):
                     current = values[key]
                     self._owned(current, token)
-                    current["pending_receipt"] = receipt
+                    current.update(state="complete", claim=None, receipt=receipt, completed_at=self.clock(),
+                                   error_code=None, elapsed_seconds=self.clock() - current["created_at"])
                     return {key: current}, None
-                self.store.atomic([key], remember)
-            published = self.readback(receipt)
-            if generation_version(published, preparation_policy=manifest.get('preparation_policy', 'after_review_v1')) != manifest["source_version"]:
-                raise SourceChanged("최종 저장 원문이 생성 기준과 다릅니다.")
-            target_ids = {e['id'] for e in entries if 'learning' in e}
-            stored = {e["id"]: e.get("learning") for e in published["entries"] if e['id'] in target_ids}
-            expected = {e["id"]: e["learning"] for e in entries if e['id'] in target_ids}
-            if digest(stored) != digest(expected):
-                raise EngineError("최종 저장 학습자료가 검증 결과와 다릅니다.")
-            self._assert_current(job)
-            if lost.is_set():
-                raise LeaseLost("최종 저장 실행 소유권을 확인할 수 없습니다.")
-            def done(values):
-                current = values[key]
-                self._owned(current, token)
-                current.update(state="complete", claim=None, receipt=receipt, completed_at=self.clock(),
-                               error_code=None, elapsed_seconds=self.clock() - current["created_at"])
-                return {key: current}, None
-            self.store.atomic([key], done)
+                self.store.atomic([key], done)
         except Exception as error:
             def retry(values):
                 current = values[key]
@@ -810,9 +799,6 @@ class LearningEngine:
                 return {key: current}, None
             self.store.atomic([key], retry)
             raise
-        finally:
-            stopped.set()
-            thread.join(timeout=1)
         return self.status(job_id)
 
     def reconcile(self, dispatcher):

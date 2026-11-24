@@ -176,12 +176,13 @@ async function openVocabularyBankEditor(){
   if(vocabularyDeleteBusy||vocabularyRenameBusy||vocabularyUploadBusy||!currentVocabularyBank||!Number.isInteger(currentVocabularyBank.version))return;
   if(!window.MelodyVocabularyEditor){vocabularyError('수정 화면을 불러오지 못했습니다. 새로고침해 주세요.');return;}
   vocabularyRenameBusy=true;vocabularyListSerial++;vocabularyBankSerial++;syncVocabularyDeletionControls();
-  try{await window.MelodyVocabularyEditor.open({bankId:selectedVocabularyBook,chapterId:selectedVocabularyLesson,trigger:document.getElementById('vocabularyRenameButton'),onBankChanged:applyVocabularyBankChange});}
+  try{await window.MelodyVocabularyEditor.open({bankId:selectedVocabularyBook,trigger:document.getElementById('vocabularyRenameButton')});}
   finally{vocabularyRenameBusy=false;syncVocabularyDeletionControls();document.getElementById('vocabularyRenameButton').focus({preventScroll:true});}
 }
 function applyVocabularyBankChange(bank){
   if(!bank?.id||!Number.isInteger(bank.version)||!Array.isArray(bank.entries)||!Array.isArray(bank.units))return;
-  window.MelodyBankData?.invalidate('/banks/'+bank.id);
+  const previousBank=vocabularyBanks.find(item=>item.id===bank.id);
+  if(previousBank?.version>bank.version)return;
   vocabularyListSerial++;vocabularyBankSerial++;
   vocabularyBanks=vocabularyBanks.map(item=>item.id===bank.id?{...item,title:bank.title,version:bank.version,units:bank.units,counts:bank.counts}:item);
   renderVocabularyBankOptions();document.getElementById('vocabularyBook').value=selectedVocabularyBook;

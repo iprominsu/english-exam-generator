@@ -12,6 +12,7 @@ import re
 import shutil
 import threading
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from itertools import combinations, combinations_with_replacement
 from pathlib import Path
@@ -94,6 +95,22 @@ def _publish_pdf_pair(staging: list[Path], destinations: list[Path]) -> None:
                         logging.getLogger(__name__).warning("PDF rollback copy cleanup unavailable (%s)", type(error).__name__)
 
 
+@contextmanager
+def _stage_pdf_pair(student: Path, answers: Path):
+    """두 임시 PDF 작성을 모두 마치면 함께 발행하고 임시 파일을 정리한다."""
+    suffix = "." + uuid.uuid4().hex + ".tmp"
+    destinations = [student, answers]
+    staging = [path.with_name(path.name + suffix) for path in destinations]
+    try:
+        for path in destinations:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        yield staging
+        _publish_pdf_pair(staging, destinations)
+    finally:
+        for path in staging:
+            path.unlink(missing_ok=True)
+
+
 @dataclass(frozen=True)
 class Line:
     text: str
@@ -129,7 +146,6 @@ class Header:
     scope_y: float
     body_top: float
     box_height: float = HEADER_MIN_HEIGHT
-    scope_overflow: tuple[str, ...] = ()
 
 
 def _fonts(font_path: str | Path | None, bold_font_path: str | Path | None) -> tuple[str, str]:
@@ -542,15 +558,13 @@ def _header_layout(worksheet: dict[str, Any], regular: str, bold: str, answer: b
     title_lines = _wrap(title, bold, 14, HEADER_CELL_WIDTHS[1] - 16)
     scope = _scope_label(worksheet)
     scope_lines = _wrap(scope, regular, BODY_SIZE, HEADER_CELL_WIDTHS[0] - 12)
-    scope_overflow: list[str] = []
     box_height = max(HEADER_MIN_HEIGHT, 14 + 18 * (len(title_lines) - 1) + 8, BODY_SIZE + 13 * (len(scope_lines) - 1) + 10)
     box_bottom = PAGE_HEIGHT - MARGIN - box_height
     scope_y = _centered_text_y(box_bottom, box_height, regular, BODY_SIZE, len(scope_lines), 13)
-    overflow_height = 13 * len(scope_overflow) + 4 if scope_overflow else 0
-    body_top = box_bottom - overflow_height - HEADER_BODY_GAP
+    body_top = box_bottom - HEADER_BODY_GAP
     if body_top - BODY_BOTTOM < 200:
         raise LayoutError("시험지 제목이 너무 길거나 범위 이름이 너무 깁니다. 인쇄할 제목과 범위를 줄이세요.")
-    return Header(tuple(title_lines), tuple(scope_lines), scope_y, body_top, box_height, tuple(scope_overflow))
+    return Header(tuple(title_lines), tuple(scope_lines), scope_y, body_top, box_height)
 
 
 def _header(pdf: canvas.Canvas, header: Header, regular: str, bold: str, answer: bool, draft: bool, *, first_page: bool = True) -> None:
@@ -586,10 +600,6 @@ def _header(pdf: canvas.Canvas, header: Header, regular: str, bold: str, answer:
     else:
         pdf.drawString(name_x + 8, name_y, "이름 :")
     pdf.setFont(regular, BODY_SIZE)
-    y = box_bottom - 15
-    for line in header.scope_overflow:
-        pdf.drawString(MARGIN, y, line)
-        y -= 13
     instruction = "정답 번호 전체와 뜻을 확인하세요." if answer else "■ 주어진 어휘의 뜻을 모두 고르시오."
     pdf.drawString(MARGIN, header.body_top + 20, instruction)
     pdf.setLineWidth(0.5)
@@ -689,18 +699,9 @@ def render_worksheet(
         _block(q, n, regular, bold, True, answer_capacity, show_unit_label=show_unit_labels)
         for n, q in enumerate(questions, 1)
     ], answer_header.body_top)
-    suffix = "." + uuid.uuid4().hex + ".tmp"
-    staging = [student.with_name(student.name + suffix), answers.with_name(answers.name + suffix)]
-    try:
-        student.parent.mkdir(parents=True, exist_ok=True)
-        answers.parent.mkdir(parents=True, exist_ok=True)
-        student_metrics = _write_pdf(staging[0], worksheet, student_pages, student_header, regular, bold, False, is_draft)
-        answer_metrics = _write_pdf(staging[1], worksheet, answer_pages, answer_header, regular, bold, True, is_draft)
-        _publish_pdf_pair(staging, [student, answers])
-    finally:
-        for path in staging:
-            if path.exists():
-                path.unlink()
+    with _stage_pdf_pair(student, answers) as (student_tmp, answer_tmp):
+        student_metrics = _write_pdf(student_tmp, worksheet, student_pages, student_header, regular, bold, False, is_draft)
+        answer_metrics = _write_pdf(answer_tmp, worksheet, answer_pages, answer_header, regular, bold, True, is_draft)
     return {
         "student_path": str(student),
         "answer_path": str(answers),

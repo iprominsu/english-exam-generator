@@ -1,52 +1,81 @@
-"""참고 어휘 로드 (노트북 셀 3-1 이식, 변경 없음)."""
+"""구형 Excel(.xlsx) 단어장 읽기 호환 모듈."""
 
-import pandas as pd
+from contextlib import closing
+from itertools import zip_longest
 import re
+
+from feature_word_meaning.excel_importer import source_rows
 from . import day_range
 
 
-def load_vocab(xlsx_path: str, day: int) -> pd.DataFrame:
-    with pd.ExcelFile(xlsx_path) as book:
-        matches = [name for name in book.sheet_names if re.fullmatch(r"Day\s+0*" + str(day), name)]
-        if len(matches) != 1:
-            raise ValueError("선택한 어휘 파일에 해당 Day 시트가 없습니다.")
-        df = pd.read_excel(book, sheet_name=matches[0])
-    df = df.rename(columns=lambda c: str(c).strip())
-    df = df.dropna(how="all").reset_index(drop=True)
-    if not {"단어", "뜻"}.issubset(df.columns) or df.empty:
-        raise ValueError("선택한 Day에 단어와 뜻이 필요합니다.")
-    return df
+def _load_book(xlsx_path: str):
+    # 표준 라이브러리 전용 테스트 환경에서도 모듈을 임포트할 수 있도록 지연 임포트한다.
+    from openpyxl import load_workbook
+    return closing(load_workbook(xlsx_path, read_only=True, data_only=True))
 
 
-def available_days(xlsx_path):
-    with pd.ExcelFile(xlsx_path) as book:
-        return sorted({int(m.group(1)) for name in book.sheet_names
-                       if (m := re.fullmatch(r"Day\s+(\d{1,3})", name)) and 1 <= int(m.group(1)) <= 365})
+def _read_day_rows(book, number: int, *, strict_cells: bool = False) -> list[dict]:
+    """단일 Day 시트를 찾아 검증한 뒤 행 딕셔너리 목록으로 반환한다."""
+    names = [name for name in book.sheetnames if re.fullmatch(r"Day\s+0*" + str(number), name)]
+    if len(names) != 1:
+        raise ValueError(
+            "선택한 어휘 파일에 해당 Day 시트가 없습니다."
+            if not strict_cells
+            else f"DAY {number} 시트가 없거나 중복되어 있습니다."
+        )
+    rows_iter = source_rows(book[names[0]])
+    columns = {}
+    for index, name in enumerate(next(rows_iter, ())):
+        if name is not None:
+            columns.setdefault(str(name).strip(), index)
+    missing_content = f"DAY {number}의 단어와 뜻을 확인해 주세요." if strict_cells else "선택한 Day에 단어와 뜻이 필요합니다."
+    if not {"단어", "뜻"}.issubset(columns):
+        raise ValueError(missing_content)
+
+    parsed = []
+    for row_number, raw in enumerate(rows_iter, 2):
+        if all(cell is None or (isinstance(cell, str) and not cell.strip()) for cell in raw):
+            continue
+        row = {name: raw[index] for name, index in columns.items() if index < len(raw)}
+        if strict_cells and (not _cell(row.get("단어")) or not _cell(row.get("뜻"))):
+            raise ValueError(f"DAY {number}에 단어 또는 뜻이 비어 있는 행이 있습니다.")
+        row.update(_source_sheet=names[0], _source_row=row_number)
+        parsed.append(row)
+    if not parsed:
+        raise ValueError(missing_content)
+    return parsed
 
 
-def load_range(xlsx_path, day, day_end=None):
+def load_vocab(xlsx_path: str, day: int) -> list[dict]:
+    """지정한 Day 시트의 어휘 행 목록을 읽는다."""
+    with _load_book(xlsx_path) as book:
+        return _read_day_rows(book, day, strict_cells=False)
+
+
+def available_days(xlsx_path) -> list[int]:
+    """워크북에서 사용 가능한 Day 번호 목록을 오름차순으로 반환한다."""
+    with _load_book(xlsx_path) as book:
+        return sorted({
+            int(m.group(1))
+            for name in book.sheetnames
+            if (m := re.fullmatch(r"Day\s+(\d{1,3})", name)) and 1 <= int(m.group(1)) <= 365
+        })
+
+
+def load_range(xlsx_path, day, day_end=None) -> list[dict]:
+    """연속된 Day 범위의 어휘를 행 순서대로 번갈아 병합해 반환한다."""
     start, end = day_range.bounds(day, day_end)
     if start == end:
         return load_vocab(xlsx_path, start)
-    frames = []
-    with pd.ExcelFile(xlsx_path) as book:
+    chapters = []
+    with _load_book(xlsx_path) as book:
         for number in range(start, end + 1):
-            names = [name for name in book.sheet_names if re.fullmatch(r"Day\s+0*" + str(number), name)]
-            if len(names) != 1:
-                raise ValueError(f"DAY {number} 시트가 없거나 중복되어 있습니다.")
-            frame = pd.read_excel(book, sheet_name=names[0]).rename(columns=lambda c: str(c).strip()).dropna(how="all")
-            if not {"단어", "뜻"}.issubset(frame.columns) or frame.empty:
-                raise ValueError(f"DAY {number}의 단어와 뜻을 확인해 주세요.")
-            if frame[["단어", "뜻"]].apply(lambda col: col.map(lambda v: not _cell(v))).any().any():
-                raise ValueError(f"DAY {number}에 단어 또는 뜻이 비어 있는 행이 있습니다.")
-            frame = frame.reset_index(drop=True)
-            frame["_source_day"] = number
-            frame["_row_order"] = frame.index
-            frames.append(frame)
-    # Interleave Days so a long source cannot disproportionately favour its first Day.
-    result = pd.concat(frames, ignore_index=True).sort_values(["_row_order", "_source_day"]).drop(columns="_row_order").reset_index(drop=True)
-    result.attrs.update(day_start=start, day_end=end)
-    return result
+            rows = _read_day_rows(book, number, strict_cells=True)
+            for row in rows:
+                row["_source_day"] = number
+            chapters.append(rows)
+    # Day별 단어 수 차이에 따른 편향을 막기 위해 같은 행 순서끼리 번갈아 배치한다.
+    return [row for group in zip_longest(*chapters) for row in group if row is not None]
 
 
 def _cell(v):
@@ -56,32 +85,22 @@ def _cell(v):
     return "" if s.lower() == "nan" else s
 
 
-def vocab_to_text(vocab_df) -> str:
-    lines = []
-    for _, r in vocab_df.iterrows():
-        parts = [f"단어:{_cell(r.get('단어'))}", f"뜻:{_cell(r.get('뜻'))}"]
-        if "_source_day" in vocab_df.columns:
-            parts.insert(0, f"DAY:{int(r['_source_day'])}")
-        for col in ("파생어", "유의어", "반의어"):
-            val = _cell(r.get(col))
-            if val:
-                parts.append(f"{col}:{val}")
-        lines.append(" | ".join(parts))
-    return "\n".join(lines)
-
-
-def to_bank(vocab_df, day, *, source=None):
-    """Read compatibility for old registered workbooks; no AI or migration write."""
+def to_bank(rows, day, *, source=None):
+    """구형 Excel 단어장을 공통 단어은행(bank) 딕셔너리 형식으로 변환한다(AI/마이그레이션 쓰기 없음)."""
     source = source or {}
     entries, units = [], {}
-    for index, row in vocab_df.iterrows():
-        number = int(row.get('_source_day', day))
-        unit_id = f'legacy-day-{number}'
-        units.setdefault(unit_id, {'id': unit_id, 'label': f'DAY {number}', 'order': number})
-        word, meaning = _cell(row.get('단어')), _cell(row.get('뜻'))
+    for index, row in enumerate(rows):
+        number = int(row.get("_source_day", day))
+        unit_id = f"legacy-day-{number}"
+        units.setdefault(unit_id, {"id": unit_id, "label": f"DAY {number}", "order": number})
+        word, meaning = _cell(row.get("단어")), _cell(row.get("뜻"))
         if word and meaning:
-            entries.append({'id': f'legacy-row-{index}', 'unit_id': unit_id, 'word': word,
-                            'meaning': meaning, 'meaning_raw': meaning, 'status': 'ready',
-                            'source': {'row': int(index) + 2, 'sheet': f'Day {number}'}})
-    return {'id': source.get('id', ''), 'title': source.get('name', ''), 'source': source,
-            'units': list(units.values()), 'entries': entries}
+            entries.append({
+                "id": f"legacy-row-{index}", "unit_id": unit_id, "word": word,
+                "meaning": meaning, "meaning_raw": meaning, "status": "ready",
+                "source": {"row": row.get("_source_row", index + 2), "sheet": row.get("_source_sheet", f"Day {number}")},
+            })
+    return {
+        "id": source.get("id", ""), "title": source.get("name", ""), "source": source,
+        "units": list(units.values()), "entries": entries,
+    }

@@ -38,12 +38,3 @@ def target_matches(text, word, *, inflected=True):
 def target_surface(text, word, *, unique=True):
     matches = target_matches(text, word)
     return matches[0].group() if matches and (not unique or len(matches) == 1) else None
-
-
-def blank_target(text, word, *, unique=True):
-    matches = target_matches(text, word)
-    if not matches or unique and len(matches) != 1:
-        raise ValueError('문장에서 대상 단어 하나를 확인해야 합니다.')
-    for match in reversed(matches):
-        text = text[:match.start()] + '______' + text[match.end():]
-    return text

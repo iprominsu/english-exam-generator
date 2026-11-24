@@ -84,28 +84,48 @@ def _metadata(drive, file_id):
         raise
 
 
-def _owned_file(metadata, folder, kind, key, mime):
+def _list_files(drive, query, fields='files(id,mimeType,parents,trashed,appProperties,capabilities(canDelete)),nextPageToken'):
+    """Drive 페이지네이션을 따라 일치하는 파일 메타데이터를 모두 수집한다."""
+    files, token = {}, None
+    while True:
+        args = {'q': query, 'fields': fields, 'pageSize': 1000}
+        if token:
+            args['pageToken'] = token
+        result = drive.files().list(**args).execute()
+        files.update({item['id']: item for item in result.get('files', [])})
+        token = result.get('nextPageToken')
+        if not token:
+            return files
+
+
+def _owned_file(metadata, folder, kind, key, mime, *, label='시험지'):
     props = metadata.get('appProperties', {})
     if (folder not in metadata.get('parents', []) or metadata.get('mimeType') != mime
             or props.get('feature') != FEATURE_TAG or props.get('kind') != kind
             or props.get('record_key') != key or metadata.get('capabilities', {}).get('canDelete') is not True):
-        raise DriveSyncError('이 시험지에 속한 파일인지 확인할 수 없어 삭제하지 않았습니다.', 'invalid_delete_target')
+        raise DriveSyncError(f'이 {label}에 속한 파일인지 확인할 수 없어 삭제하지 않았습니다.', 'invalid_delete_target')
+
+
+def _collect_state_file_ids(backend, drive, states_folder, groups, *, label='시험지'):
+    """상태 기록 폴더에서 삭제 대상 레코드에 속한 파일 ID를 순서대로 수집한다."""
+    ordered = []
+    for record_kind, records in groups:
+        for record in records:
+            _, _, state_files = backend._find(record_kind, record['id'])
+            for metadata in state_files:
+                # _find 응답에는 canDelete가 없으므로 삭제 직전에 다시 조회해 소유권을 확인한다.
+                metadata = _metadata(drive, metadata['id'])
+                if metadata:
+                    _owned_file(metadata, states_folder, 'state_' + record_kind, _hash(record['id']), 'application/json', label=label)
+                    ordered.append(metadata['id'])
+    return ordered
 
 
 def plan_drive_deletion(backend, worksheet, jobs):
     drive, _, folders = backend._context()  # Also verifies the approved account.
     key = _hash(worksheet['id'])
     query = f"'{folders['exam']}' in parents and appProperties has {{ key='feature' and value='{FEATURE_TAG}' }} and appProperties has {{ key='record_key' and value='{key}' }}"
-    files, token = {}, None
-    while True:
-        args = {'q': query, 'fields': 'files(id,mimeType,parents,trashed,appProperties,capabilities(canDelete)),nextPageToken', 'pageSize':1000}
-        if token:
-            args['pageToken'] = token
-        result = drive.files().list(**args).execute()
-        files.update({file['id']: file for file in result.get('files', [])})
-        token = result.get('nextPageToken')
-        if not token:
-            break
+    files = _list_files(drive, query)
     kinds = {'sheet_id': ('worksheet', SHEET_MIME), 'student_id': ('student_pdf', 'application/pdf'), 'answer_id': ('answer_pdf', 'application/pdf')}
     for field, (kind, mime) in kinds.items():
         file_id = worksheet.get('drive', {}).get(field)
@@ -123,15 +143,7 @@ def plan_drive_deletion(backend, worksheet, jobs):
     ordered = list(files)
     # Job snapshots also contain generated questions. Remove them before the
     # worksheet state, which remains as the retry journal until the last step.
-    for record_kind, records in [('jobs', jobs), ('worksheets', [worksheet])]:
-        for record in records:
-            _, _, state_files = backend._find(record_kind, record['id'])
-            for metadata in state_files:
-                # _find's older field list lacks canDelete; fetch it explicitly.
-                metadata = _metadata(drive, metadata['id'])
-                if metadata:
-                    _owned_file(metadata, folders['states'], 'state_'+record_kind, _hash(record['id']), 'application/json')
-                    ordered.append(metadata['id'])
+    ordered.extend(_collect_state_file_ids(backend, drive, folders['states'], [('jobs', jobs), ('worksheets', [worksheet])], label='시험지'))
     return list(dict.fromkeys(ordered))
 
 

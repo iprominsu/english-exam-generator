@@ -9,9 +9,6 @@ import json
 import math
 import re
 
-import pandas as pd
-from gspread_dataframe import set_with_dataframe
-
 from . import config, candidates, day_range
 from .google_clients import drive_service, sheets_client
 
@@ -26,9 +23,11 @@ SHEET_COLUMNS = ["no", "type", "instruction", "answer", "explanation", "payload_
 _DAY_RE = re.compile(r"DAY (\d+)(?:~(\d+))?$")
 
 
-def questions_to_dataframe(questions) -> pd.DataFrame:
-    rows = [
-        {
+def questions_to_rows(questions) -> list[list]:
+    """문항 딕셔너리 목록을 시트 28열(SHEET_COLUMNS) 순서의 2차원 리스트로 변환한다."""
+    rows = []
+    for q in questions:
+        record = {
             "no": q["no"],
             "type": q["type"],
             "instruction": q["instruction"],
@@ -39,9 +38,8 @@ def questions_to_dataframe(questions) -> pd.DataFrame:
             **{key: q.get(key, "") for key in META_COLUMNS},
             **candidates.row_values(q),
         }
-        for q in questions
-    ]
-    return pd.DataFrame(rows, columns=SHEET_COLUMNS)
+        rows.append(["" if record[column] is None else record[column] for column in SHEET_COLUMNS])
+    return rows
 
 
 def _q_escape(name: str) -> str:
@@ -72,25 +70,22 @@ def list_subfolders(parent_id: str) -> list:
     )
 
 
-def list_day_folders() -> list:
+def list_day_folders(*, project_id: str = None) -> list:
     """PROJECT_FOLDER 아래 'DAY N' 폴더들을 day 오름차순으로."""
-    project_id = get_or_create_folder(config.PROJECT_FOLDER)
+    project_id = project_id or get_or_create_folder(config.PROJECT_FOLDER)
     out = []
     for f in list_subfolders(project_id):
         m = _DAY_RE.search(f["name"])
         if m:
             ctx = {"day": int(m.group(1)), "folder_id": f["id"], "title": f["name"]}
             if m.group(2):
-                ctx["day_end"] = day_range.bounds(ctx["day"], int(m.group(2)))[1]
+                try:
+                    ctx["day_end"] = day_range.bounds(ctx["day"], int(m.group(2)))[1]
+                except ValueError:
+                    continue
             out.append(ctx)
     out.sort(key=lambda x: x["day"])
     return out
-
-
-def trash_existing(name, folder_id):
-    q = f"name='{_q_escape(name)}' and '{folder_id}' in parents and trashed=false"
-    for f in drive_service().files().list(q=q, fields="files(id)").execute(num_retries=2).get("files", []):
-        drive_service().files().update(fileId=f["id"], body={"trashed": True}).execute()
 
 
 def find_sheet_id(title, folder_id):
@@ -282,7 +277,7 @@ def total_sets(questions) -> int:
 
 def write_all(ws, questions) -> None:
     # One values update: never clear the only copy before a second network write.
-    values = [SHEET_COLUMNS] + questions_to_dataframe(questions).fillna("").values.tolist()
+    values = [SHEET_COLUMNS] + questions_to_rows(questions)
     size = max(len(values), len(ws.get_all_values()))
     if ws.row_count < size or ws.col_count < len(SHEET_COLUMNS):
         ws.resize(rows=max(size, ws.row_count), cols=max(len(SHEET_COLUMNS), ws.col_count))

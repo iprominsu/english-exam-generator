@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="/static/design-system/base.css">
 <link rel="stylesheet" href="/static/design-system/components.css">
 
+<link rel="stylesheet" href="/static/worksheet-download.css">
+<link rel="stylesheet" href="/static/vocabulary-editor.css">
 </head><body class="me-ui">
 <!-- ================= SHELL (topbar + sidebar + content) ================= -->
 <div id="shell" data-workspace-view="overview">
@@ -200,7 +202,7 @@
             <p class="hint me-help" id="modeHint">선택한 챕터의 어휘로 시험지 한 부를 만듭니다.</p>
             <p class="hint me-help" id="genHint">단어장의 학습 자료를 사용해 문항을 자동 생성합니다.</p>
             <p id="legacyCapabilitiesNotice" class="me-help" role="status"></p>
-            <label class="me-checkbox"><input type="checkbox" id="legacyAllowPartial"> 확인이 필요한 항목을 제외하고 출제</label>
+            <label class="me-check"><input type="checkbox" id="legacyAllowPartial"> 확인이 필요한 항목을 제외하고 출제</label>
             <div id="generationStatus" role="status" aria-live="polite"></div>
             <div id="generationError" class="local-error me-alert" role="alert" data-tone="danger" hidden></div>
             <div id="jobPanel" hidden><ol id="jobList"></ol><div class="job-actions"><button class="btn sm outline me-button" id="retryFailed" data-variant="secondary" data-size="sm">실패한 항목만 재시도</button><button class="btn sm outline me-button" id="continuePending" data-variant="secondary" data-size="sm">남은 항목 이어하기</button><button class="btn sm outline me-button" id="checkJobs" data-variant="secondary" data-size="sm">작업 상태 확인</button><button class="btn sm outline me-button" id="cancelJobs" data-variant="secondary" data-size="sm">남은 작업 취소</button><button class="btn sm outline me-button" id="closeJobs" hidden data-variant="secondary" data-size="sm">완료 내역 닫기</button></div></div>
@@ -331,16 +333,6 @@
     </div>
   </dialog>
 
-  <dialog id="vocabDeleteDialog" class="unsaved-dialog me-dialog" aria-labelledby="vocabDeleteTitle" aria-describedby="vocabDeleteDescription">
-    <h2 id="vocabDeleteTitle">어휘 파일을 삭제할까요?</h2>
-    <p id="vocabDeleteName" class="file-name"></p>
-    <p id="vocabDeleteDescription">이 엑셀 파일을 구글 드라이브 휴지통으로 옮깁니다. 이미 만들어진 시험지와 PDF는 유지됩니다.</p>
-    <p id="vocabDeleteError" class="field-error me-help" role="alert" data-tone="danger"></p>
-    <div class="dialog-actions me-dialog-actions">
-      <button class="btn outline me-button" id="vocabDeleteCancel" onclick="cancelVocabDelete()" data-variant="secondary" data-size="md">취소</button>
-      <button class="btn danger-ghost me-button" id="vocabDeleteConfirm" onclick="confirmVocabDelete()" data-variant="danger" data-size="md">삭제</button>
-    </div>
-  </dialog>
 
   <footer class="site-footer">
     <div class="fw">Melody English</div>
@@ -367,10 +359,8 @@
 <script src="/static/contracts.js"></script>
 <script src="/static/worksheet-ui.js"></script>
 <script src="/static/worksheet-delete.js" defer></script>
-<link rel="stylesheet" href="/static/worksheet-download.css">
 <script src="/static/worksheet-download.js" defer></script>
 <script src="/static/app.js" defer></script>
-<link rel="stylesheet" href="/static/vocabulary-editor.css">
 <script src="/static/vocabulary-editor.js" defer></script>
 <script src="/static/workspace.js" defer></script>
 

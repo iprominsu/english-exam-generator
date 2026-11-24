@@ -94,12 +94,16 @@ def _validate_auth_factory(settings):
 
 
 def _load_host_auth(settings, *, state_store=None):
+    from app.gpt_subscription import ExternalAuthCoordinator
     _validate_auth_factory(settings)
     module, name = settings.auth_factory.split(":", 1)
     factory = getattr(importlib.import_module(module), name)
     if not callable(factory):
         raise ImportConfigurationError("호스트 인증 factory가 올바르지 않습니다.")
-    return factory(state_store=state_store) if settings.auth_factory == "app.personal_import_auth:create_coordinator" else factory()
+    auth = factory(state_store=state_store) if settings.auth_factory == "app.personal_import_auth:create_coordinator" else factory()
+    if not isinstance(auth, ExternalAuthCoordinator):
+        raise ImportConfigurationError("호스트가 관리하는 단일 인증 갱신 경로가 필요합니다.")
+    return auth
 
 
 def install_bank_write_guard(service, store):
@@ -141,14 +145,12 @@ def build_runtime(service, auth=None, *, settings=None, firestore_client=None, t
                   pool_factory=None, state_store=None):
     settings = settings or CloudSettings.from_environment()
     settings.validate()  # Must precede credentials, imports, clients and files.
-    from app.gpt_subscription import ExternalAuthCoordinator, create_learning_pool, set_approved_generation_handler
+    from app.gpt_subscription import ExternalAuthCoordinator, create_learning_pool
     if auth is None:
         _validate_auth_factory(settings)
         if settings.auth_factory != "app.personal_import_auth:create_coordinator":
             auth = _load_host_auth(settings)
     elif not isinstance(auth, ExternalAuthCoordinator):
-        raise ImportConfigurationError("호스트가 관리하는 단일 인증 갱신 경로가 필요합니다.")
-    if auth is not None and not isinstance(auth, ExternalAuthCoordinator):
         raise ImportConfigurationError("호스트가 관리하는 단일 인증 갱신 경로가 필요합니다.")
     from .import_engine import CloudTasksDispatcher, FirestoreStateStore, account_generation_slot
     from .import_pipeline import DurableImportCoordinator
@@ -161,8 +163,6 @@ def build_runtime(service, auth=None, *, settings=None, firestore_client=None, t
         state_store = FirestoreStateStore(firestore_client, collection="melody_learning_" + settings.state_namespace)
     if auth is None:
         auth = _load_host_auth(settings, state_store=state_store)
-    if not isinstance(auth, ExternalAuthCoordinator):
-        raise ImportConfigurationError("호스트가 관리하는 단일 인증 갱신 경로가 필요합니다.")
     # A pool allocates no process/token until a task requests inference. Its
     # additional config gate must agree with the environment on real activation.
     pool = pool_factory(auth, temp_root=Path(__file__).resolve().parents[1] / ".local" / "learning-sessions", size=2)
@@ -191,16 +191,7 @@ def build_runtime(service, auth=None, *, settings=None, firestore_client=None, t
             with account_generation_slot(state_store, settings.account_key, 'legacy_import') as cancelled:
                 return provider(request, options, cancel_event=cancelled)
         service.import_provider = legacy_import_provider
-        def approved_generation(system, prompt, effort, schema):
-            if effort != 'high':
-                raise ImportConfigurationError('호스트 생성은 GPT-6.1 Sol / High를 사용합니다.')
-            with account_generation_slot(state_store, settings.account_key, 'compatible_generation') as cancelled:
-                return pool.generate(system, prompt, effort, schema, cancel_event=cancelled)
-        set_approved_generation_handler(approved_generation)
-        def close():
-            set_approved_generation_handler(None)
-            pool.close()
-        coordinator.close = close
+        coordinator.close = pool.close
         return coordinator
     except Exception:
         pool.close()

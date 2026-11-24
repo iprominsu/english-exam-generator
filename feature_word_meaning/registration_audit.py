@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 import re
 
+from .excel_importer import column_role as role
+
 VERSION = 'registration-audit-v1'
 MAX_SOURCE_ITEMS = 100_000
 
@@ -41,20 +43,6 @@ def primary_heading(text):
 def primary_chapters(region):
     return [{'label':primary_heading(i['text']),'ref':i['id']} for i in region['items']
         if i['kind']=='cell' and primary_heading(i['text'])]
-
-
-def role(text):
-    key = re.sub(r'[\s.:=↔→()\[\]_-]', '', norm(text).casefold())
-    groups = {
-        'word': {'어휘','단어','영단어','표제어','word','words','vocabulary','headword','english','englishword','term','lexeme'},
-        'meaning': {'뜻','의미','뜻풀이','해석','우리말','한글뜻','한국어뜻','meaning','meanings','korean','koreangloss','definition','gloss'},
-        'number': {'no','번호','연번','순번','number'},
-        '유의어': {'유의어','동의어','synonym','synonyms'},
-        '반의어': {'반의어','antonym','antonyms'},
-        '파생어': {'파생어','derivatives','derivative'},
-        'metadata': {'확인','암기','체크','check','checked','품사','pos','partofspeech','단원','chapter','unit','day'},
-    }
-    return next((name for name, aliases in groups.items() if key in aliases), None)
 
 
 def read_catalog(path, ocr_engine=None, *, ocr_pages=()):
@@ -250,10 +238,6 @@ def audit_candidate(catalogue, bank):
     return {'version':VERSION,'state':'passed' if not problems else 'needs_agent',
         'source_sha256':catalogue['sha256'],'catalogue_fingerprint':catalogue['fingerprint'],
         'checked_entries':len(bank.get('entries',[])),'regions':reports,'issues':problems}
-
-
-def region_lookup(catalogue, region_id):
-    return next(r for r in catalogue['regions'] if r['id']==region_id)
 
 
 def refs_text(region, refs):

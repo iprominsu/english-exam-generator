@@ -1,7 +1,6 @@
 """Print saved meaning-writing tests; no AI or question generation is used."""
 from __future__ import annotations
 
-import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +13,7 @@ from reportlab.pdfgen import canvas
 
 from .render import (
     APPROVED_STATES, BODY_SIZE, COLUMN_GAP, COLUMN_WIDTH, LayoutError, MARGIN,
-    PAGE_HEIGHT, PAGE_WIDTH, _fonts, _publish_pdf_pair, _scope_label, _text, _wrap,
+    PAGE_HEIGHT, PAGE_WIDTH, _fonts, _stage_pdf_pair, _scope_label, _text, _wrap,
 )
 
 TABLE_WIDTH = COLUMN_WIDTH
@@ -79,10 +78,8 @@ def _logo(pdf: canvas.Canvas, x: float, y: float, size: float) -> None:
     from reportlab.lib.colors import black
 
     package_parent = Path(__file__).resolve().parent.parent
-    candidates = (package_parent / "static" / "brand" / "logo.svg",
-                  package_parent / "worksheet-webapp" / "static" / "brand" / "logo.svg")
-    source = next((candidate for candidate in candidates if candidate.is_file()), None)
-    if source is None:
+    source = package_parent / "static" / "brand" / "logo.svg"
+    if not source.is_file():
         raise LayoutError("기존 브랜드 로고 파일을 찾을 수 없습니다.")
     root = ET.parse(source).getroot()
     drawing = Drawing(200, 200)
@@ -250,17 +247,8 @@ def render_writing_worksheet(worksheet: dict[str, Any], student_path: str | Path
     student_header, answer_header = (_header_layout(worksheet, regular, bold, answer) for answer in (False, True))
     student_pages = _paginate([_row(q, n, regular, bold, False) for n, q in enumerate(questions, 1)], student_header.table_top)
     answer_pages = _paginate([_row(q, n, regular, bold, True) for n, q in enumerate(questions, 1)], answer_header.table_top)
-    suffix = "." + uuid.uuid4().hex + ".tmp"
-    staging = [student.with_name(student.name + suffix), answers.with_name(answers.name + suffix)]
-    try:
-        student.parent.mkdir(parents=True, exist_ok=True)
-        answers.parent.mkdir(parents=True, exist_ok=True)
-        student_metrics = _write_pdf(staging[0], worksheet, student_pages, student_header, regular, bold, False)
-        answer_metrics = _write_pdf(staging[1], worksheet, answer_pages, answer_header, regular, bold, True)
-        _publish_pdf_pair(staging, [student, answers])
-    finally:
-        for path in staging:
-            if path.exists():
-                path.unlink()
+    with _stage_pdf_pair(student, answers) as (student_tmp, answer_tmp):
+        student_metrics = _write_pdf(student_tmp, worksheet, student_pages, student_header, regular, bold, False)
+        answer_metrics = _write_pdf(answer_tmp, worksheet, answer_pages, answer_header, regular, bold, True)
     return {"student_path": str(student), "answer_path": str(answers), "student_pages": len(student_pages), "answer_pages": len(answer_pages),
             "draft": unreviewed if draft is None else bool(draft), "layout": {"student": student_metrics, "answers": answer_metrics}}

@@ -9,19 +9,18 @@ from copy import deepcopy
 from typing import Literal, Optional
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi import Path as ApiPath
-from fastapi.responses import FileResponse, Response, HTMLResponse, JSONResponse
+from fastapi.responses import Response, HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from . import config, pipeline, sheets_io, validation, gpt_subscription, assets, vocab, operations, candidates, llm, day_range, legacy_generator
+from . import config, pipeline, sheets_io, validation, gpt_subscription, assets, vocab, operations, candidates, legacy_generator
 from .errors import AppError, public_error
-from .uploads import validate_xlsx
 from .auth import BasicAuthMiddleware
-from .google_clients import download_to_path, drive_service, upload_bytes
+from .google_clients import download_to_path, drive_service
 from .worksheet_downloads import (DownloadItem, LABELS, create_download_router,
     find_existing_folder, load_feature_pdf, safe_filename, split_legacy_pdf)
 from urllib.parse import quote
@@ -31,11 +30,11 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 app = FastAPI(title="부스터보카 시험지 생성기")
 if os.environ.get("K_SERVICE") and not config.APP_BASIC_PASS:
     raise RuntimeError("Cloud Run requires APP_BASIC_PASS.")
-app.add_middleware(BasicAuthMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # A separate worksheet kind keeps legacy questions and Drive links intact.
 from feature_word_meaning.api import create_router
+from feature_word_meaning.drive_sync import DriveSyncError
 from feature_word_meaning.production import (create_production_service,
     OperatingDriveBackend, ProductionFeatureService)
 
@@ -70,23 +69,37 @@ class ExistingVocabularyBody(BaseModel):
 async def import_existing_vocabulary(body: ExistingVocabularyBody):
     try:
         return await run_in_threadpool(word_meaning_service.import_existing, body.file_id)
-    except HTTPException:
-        raise
     except Exception as error:
         raise public_error(error)
 
+
 VOCAB_FOLDER_NAME = "어휘 파일"
+_READ_ONLY_POST_PATHS = frozenset({
+    "/api/worksheet-downloads",
+    "/api/word-meaning/selection",
+    "/api/word-meaning/selection-bulk",
+})
 
 mutation_lock = asyncio.Lock()
+_worksheet_cache = {}
+_worksheet_cache_epoch = 0
+_worksheet_list_lock = asyncio.Lock()
+
+
+def _invalidate_worksheet_cache():
+    global _worksheet_cache_epoch
+    _worksheet_cache_epoch += 1
+    _worksheet_cache.clear()
 
 
 @app.middleware("http")
-async def serialize_writes(request, call_next):
+async def guard_requests(request, call_next):
+    if request.scope.get("path") in assets.STATIC_URLS and request.query_params.get("v") not in (None, assets.BUILD_ID):
+        return JSONResponse({"detail": "새 버전이 배포됐습니다. 페이지를 새로고침해 주세요."}, status_code=409)
     if (request.method not in {"POST", "PUT", "PATCH", "DELETE"}
-            or (request.method == "POST" and request.url.path == "/api/worksheet-downloads")):
+            or (request.method == "POST" and request.url.path in _READ_ONLY_POST_PATHS)):
         return await call_next(request)
     if mutation_lock.locked():
-        from fastapi.responses import JSONResponse
         return JSONResponse({"detail": "다른 저장 또는 생성 작업이 진행 중입니다."}, status_code=409)
     async with mutation_lock:
         _invalidate_worksheet_cache()
@@ -94,6 +107,27 @@ async def serialize_writes(request, call_next):
             return await call_next(request)
         finally:
             _invalidate_worksheet_cache()
+
+
+app.add_middleware(BasicAuthMiddleware)
+
+
+@app.middleware("http")
+async def release_headers(request, call_next):
+    response = await call_next(request)
+    versioned_asset = request.scope.get("path") in assets.STATIC_URLS
+    asset_version = request.query_params.get("v")
+    response.headers["X-App-Build"] = assets.BUILD_ID
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Cache-Control"] = (
+        "private, max-age=31536000, immutable"
+        if versioned_asset and asset_version == assets.BUILD_ID and request.method in {"GET", "HEAD"} and response.status_code == 200
+        else "private, no-store"
+    )
+    return response
 
 
 @app.get("/healthz")
@@ -134,59 +168,8 @@ async def drive_folder():
         raise public_error(e)
 
 
-# ------------------------------------------------------------
-# 어휘 파일
-# ------------------------------------------------------------
-@app.get("/api/vocab")
-async def list_vocab():
-    def _list():
-        project_id = sheets_io.get_or_create_folder(config.PROJECT_FOLDER)
-        folder_id = sheets_io.get_or_create_folder(VOCAB_FOLDER_NAME, parent_id=project_id)
-        q = f"'{folder_id}' in parents and trashed=false"
-        files = (
-            drive_service()
-            .files()
-            .list(q=q, fields="files(id,name,modifiedTime,webViewLink)", orderBy="modifiedTime desc")
-            .execute()
-            .get("files", [])
-        )
-        return files
-
-    try:
-        return await run_in_threadpool(_list)
-    except Exception as e:
-        raise public_error(e)
-
-
-@app.post("/api/vocab")
-async def upload_vocab(file: UploadFile):
-    if not (file.filename or "").lower().endswith(".xlsx"):
-        raise HTTPException(400, "xlsx 파일만 업로드할 수 있습니다.")
-    data = await file.read(10 * 1024 * 1024 + 1)
-    if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(413, "엑셀 파일은 10MB 이하만 업로드할 수 있습니다.")
-    try:
-        await run_in_threadpool(validate_xlsx, data)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-    def _upload():
-        project_id = sheets_io.get_or_create_folder(config.PROJECT_FOLDER)
-        folder_id = sheets_io.get_or_create_folder(VOCAB_FOLDER_NAME, parent_id=project_id)
-        return upload_bytes(
-            data,
-            file.filename,
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            folder_id,
-        )
-
-    try:
-        return await run_in_threadpool(_upload)
-    except Exception as e:
-        raise public_error(e)
-
-
 async def _download_vocab(vocab_file_id: str) -> str:
+    """구형 Excel 원본을 임시 파일로 내려받는다(구형 시험지 재생성·생성 호환용)."""
     fd, path = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
     try:
@@ -195,27 +178,6 @@ async def _download_vocab(vocab_file_id: str) -> str:
         os.unlink(path)
         raise
     return path
-
-
-@app.delete("/api/vocab/{file_id}")
-async def delete_vocab(file_id: str):
-    def _trash():
-        meta = _vocab_meta(file_id)
-        drive_service().files().update(
-            fileId=meta["id"], body={"trashed": True}, fields="id,trashed"
-        ).execute()
-        return {"id": meta["id"], "name": meta["name"], "deleted": True}
-
-    try:
-        result = await run_in_threadpool(_trash)
-        for key in list(_vocab_cache):
-            if key[0] == file_id:
-                _vocab_cache.pop(key, None)
-        return result
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise public_error(e)
 
 
 # ------------------------------------------------------------
@@ -250,30 +212,9 @@ async def get_worksheet(day: int, version: int):
         raise public_error(e)
 
 
-def _existing_legacy_version(day: int, version: int):
-    """Resolve saved rows without any create-on-missing folder helper."""
-    project_id = find_existing_folder(drive_service(), config.PROJECT_FOLDER)
-    matches = []
-    for folder in sheets_io.list_subfolders(project_id):
-        match = sheets_io._DAY_RE.search(folder["name"])
-        if not match or int(match.group(1)) != day:
-            continue
-        ctx = {"day": day, "folder_id": folder["id"], "title": folder["name"]}
-        if match.group(2):
-            ctx["day_end"] = day_range.bounds(day, int(match.group(2)))[1]
-        _, loaded, _ = sheets_io.open_day_sheet(ctx, create=False, exam_count=config.EXAM_COUNT_DEFAULT)
-        if any(question["set"] == version for question in loaded):
-            matches.append((ctx, loaded))
-    if not matches:
-        raise ValueError(f"DAY {day} v{version} 시험지를 찾을 수 없습니다.")
-    if len(matches) != 1:
-        raise ValueError(f"DAY {day}의 버전을 하나로 정할 수 없습니다. 교재별 버전을 확인해 주세요.")
-    return matches[0]
-
-
 def _read_saved_legacy_pdf(day: int, version: int):
-    """Only read the selected saved version; do not render, update or publish."""
-    ctx, loaded = _existing_legacy_version(day, version)
+    """저장된 버전의 PDF만 읽고 렌더링·수정·발행은 하지 않는다."""
+    ctx, _, loaded = pipeline._get_ws_loaded(day, config.EXAM_COUNT_DEFAULT, version, create_project=False)
     ctx = sheets_io.version_ctx(ctx, pipeline.pick_set(loaded, version))
     name = sheets_io.pdf_name_for(ctx["title"], version)
     meta = sheets_io.find_file(name, ctx["folder_id"])
@@ -413,8 +354,8 @@ async def regenerate_question(day: int, version: int, question_index: int, body:
                 except Exception as error:
                     raise AppError("이 시험지의 원본 어휘 파일을 찾을 수 없습니다. 드라이브 휴지통에서 원본을 복원한 뒤 다시 시도해 주세요.", 422, "source_missing") from error
                 path = await _download_vocab(source_id)
-                vocab_df = await run_in_threadpool(vocab.load_range, path, day, worksheet.get("day_end", day))
-                bank = vocab.to_bank(vocab_df, day, source={'id': source_id, 'name': worksheet.get('source_name', '')})
+                rows = await run_in_threadpool(vocab.load_range, path, day, worksheet.get("day_end", day))
+                bank = vocab.to_bank(rows, day, source={'id': source_id, 'name': worksheet.get('source_name', '')})
                 unit_ids = [unit['id'] for unit in bank['units']]
                 legacy_generator.reuse_saved_material(bank, original)
             record = record or {"request_id": body.request_id, "params": params}
@@ -438,7 +379,8 @@ async def regenerate_question(day: int, version: int, question_index: int, body:
             await run_in_threadpool(operations.save, record)
         if isinstance(error, gpt_subscription.SubscriptionError):
             raise HTTPException(error.status, {"message": str(error), "code": "subscription"})
-        if isinstance(error, ValueError):
+        # DriveSyncError는 ValueError의 하위 클래스이므로 일반 형식 오류 422 대신 public_error로 전달한다.
+        if isinstance(error, ValueError) and not isinstance(error, DriveSyncError):
             raise HTTPException(422, {"message": "문항 또는 원본 어휘 형식을 확인해 주세요.", "code": "validation"})
         raise public_error(error)
     except HTTPException:
@@ -521,8 +463,7 @@ class GenerateBody(BaseModel):
 async def legacy_capabilities(bank_id: str, unit_ids: list[str] = Query(...)):
     try:
         bank = await run_in_threadpool(word_meaning_service.get, 'banks', bank_id)
-        # Validate IDs before looking up supplemental results.
-        await run_in_threadpool(legacy_generator.capabilities, bank, unit_ids)
+        legacy_generator.validate_selection(bank, unit_ids)
         snapshot, preparation = await run_in_threadpool(
             word_meaning_service.legacy_selection_snapshot, bank, unit_ids)
         result = await run_in_threadpool(legacy_generator.capabilities, snapshot, unit_ids)
@@ -556,7 +497,12 @@ async def generate(body: GenerateBody):
         return record["result"]
     vocab_path, bank, unit_ids = None, None, None
     try:
-        if body.bank_id:
+        if record and record.get("questions") and record["questions"][0].get("source_name"):
+            # The generated rows already contain the frozen source needed to resume saving.
+            source = None
+            if body.bank_id:
+                day = end = 1
+        elif body.bank_id:
             unit_ids = list(body.unit_ids)
             if record and record.get('bank_snapshot'):
                 # Existing requests keep their verified, frozen source, even
@@ -564,12 +510,12 @@ async def generate(body: GenerateBody):
                 bank = deepcopy(record['bank_snapshot'])
             else:
                 bank = await run_in_threadpool(word_meaning_service.get, 'banks', body.bank_id)
-                await run_in_threadpool(legacy_generator.capabilities, bank, unit_ids)
+                legacy_generator.validate_selection(bank, unit_ids)
                 bank, preparation = await run_in_threadpool(
                     word_meaning_service.legacy_selection_snapshot, bank, unit_ids)
                 if not preparation.get('selection_ready', True):
                     raise HTTPException(409, {'code': 'learning_not_ready', **preparation})
-            legacy_generator.capabilities(bank, unit_ids)
+            legacy_generator.validate_selection(bank, unit_ids)
             labels = [unit['label'] for unit in bank['units'] if unit['id'] in unit_ids]
             # Day/version remains a storage identity; actual chapter labels are
             # persisted separately and never inferred from these numeric keys.
@@ -588,8 +534,8 @@ async def generate(body: GenerateBody):
         if not record.get("questions"):
             record["state"] = "generating"
             await run_in_threadpool(operations.save, record)
-        result = await pipeline.generate_and_render(day, vocab_path, 'script', body.count,
-            body.reasoning, source=source, record=record, **({"day_end": end} if end != day else {}),
+        result = await pipeline.generate_and_render(day, vocab_path, body.count,
+            source=source, record=record, **({"day_end": end} if end != day else {}),
             bank=bank, unit_ids=unit_ids, seed=body.seed, question_types=body.question_types, allow_partial=body.allow_partial)
         record.update(state="done", result={**result, "request_id": request_id})
         await run_in_threadpool(operations.save, record)
@@ -600,7 +546,7 @@ async def generate(body: GenerateBody):
             await run_in_threadpool(operations.save, record)
         if isinstance(e, gpt_subscription.SubscriptionError):
             raise HTTPException(e.status, {"message": str(e), "code": "subscription", "retryable": False})
-        if isinstance(e, ValueError):
+        if isinstance(e, ValueError) and not isinstance(e, DriveSyncError):
             raise HTTPException(422, {"message": "생성된 문항 형식 또는 어휘 파일을 확인할 수 없습니다. 다시 시도해 주세요.", "retryable": True})
         raise public_error(e)
     except HTTPException:
@@ -620,47 +566,6 @@ async def operation_status(request_id: str):
     if not re.fullmatch(r"[a-zA-Z0-9-]{20,80}", request_id):
         raise HTTPException(400, "작업 번호를 확인해 주세요.")
     return operations.public(await run_in_threadpool(operations.load, request_id))
-
-
-@app.get("/api/gpt/status")
-async def gpt_status(response: Response):
-    response.headers["Cache-Control"] = "private, no-store"
-    return await run_in_threadpool(gpt_subscription.get_status)
-
-
-
-
-_worksheet_cache = {}
-_worksheet_cache_epoch = 0
-_worksheet_list_lock = asyncio.Lock()
-_vocab_cache = {}
-
-
-def _invalidate_worksheet_cache():
-    global _worksheet_cache_epoch
-    _worksheet_cache_epoch += 1
-    _worksheet_cache.clear()
-
-
-@app.middleware("http")
-async def release_headers(request, call_next):
-    versioned_asset = request.scope.get("path") in assets.STATIC_URLS
-    asset_version = request.query_params.get("v")
-    if versioned_asset and asset_version not in (None, assets.BUILD_ID):
-        response = JSONResponse({"detail": "새 버전이 배포됐습니다. 페이지를 새로고침해 주세요."}, status_code=409)
-    else:
-        response = await call_next(request)
-    response.headers["X-App-Build"] = assets.BUILD_ID
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
-    response.headers["Referrer-Policy"] = "same-origin"
-    response.headers["Cache-Control"] = (
-        "private, max-age=31536000, immutable"
-        if versioned_asset and asset_version == assets.BUILD_ID and request.method in {"GET", "HEAD"} and response.status_code == 200
-        else "private, no-store"
-    )
-    return response
 
 
 @app.exception_handler(AppError)
@@ -699,18 +604,3 @@ def _vocab_meta(file_id):
     if meta.get("trashed") or parent not in meta.get("parents", []) or not meta["name"].lower().endswith(".xlsx") or meta.get("mimeType") == "application/vnd.google-apps.folder":
         raise HTTPException(422, {"message": "등록된 어휘 파일을 선택해 주세요.", "fields": {"vocab_file_id": "유효한 파일을 선택해 주세요."}})
     return meta
-
-
-@app.get("/api/vocab/{file_id}/days")
-async def vocab_days(file_id: str):
-    meta = await run_in_threadpool(_vocab_meta, file_id)
-    key = (file_id, meta.get("modifiedTime"))
-    if key not in _vocab_cache:
-        path = await _download_vocab(file_id)
-        try:
-            days = await run_in_threadpool(vocab.available_days, path)
-            _vocab_cache.clear() if len(_vocab_cache) > 100 else None
-            _vocab_cache[key] = {"id": file_id, "days": days, "name": meta["name"]}
-        finally:
-            os.unlink(path)
-    return _vocab_cache[key]

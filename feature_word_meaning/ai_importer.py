@@ -241,7 +241,7 @@ def source_chunks(path, ocr_engine=None):
     blocks = []
     if path.suffix.lower() == ".xlsx":
         from openpyxl import load_workbook
-        from .excel_importer import source_rows, structured_sheet_rows, validate_xlsx_archive
+        from .excel_importer import column_role, source_rows, structured_sheet_rows, validate_xlsx_archive
         validate_xlsx_archive(path)
         book = load_workbook(path, read_only=True, data_only=True)
         try:
@@ -265,11 +265,11 @@ def source_chunks(path, ocr_engine=None):
                 for row_index, row in enumerate(rows, 1):
                     cells = ["" if value is None else str(value) for value in row]
                     if row_index == 1:
-                        metadata_headers = {"번호", "연번", "단원", "챕터", "차시", "품사", "no", "number", "chapter", "unit", "day", "pos", "part of speech"}
-                        metadata_columns = {i for i, value in enumerate(cells) if value.strip().casefold().rstrip(".") in metadata_headers}
-                    labels = {value.casefold().strip() for value in cells}
-                    header = row_index == 1 and bool(labels & {"단어", "영단어", "표제어", "word", "english", "english word", "headword", "lexeme", "vocabulary", "term"}) and bool(
-                        labels & {"뜻", "의미", "뜻풀이", "meaning", "korean gloss", "definition", "gloss"})
+                        first_roles = [column_role(cell) for cell in cells]
+                        metadata_columns = {i for i, r in enumerate(first_roles) if r in {"number", "metadata"}}
+                        header = ("word" in first_roles) and ("meaning" in first_roles)
+                    else:
+                        header = False
                     if any(cells):
                         blocks.append({"id": f"s{sheet_index}r{row_index}", "chapter": sheet.title,
                                        "text": " | ".join(cells), "cells": cells,

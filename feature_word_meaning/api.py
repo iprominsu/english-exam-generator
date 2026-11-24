@@ -1,8 +1,4 @@
-"""FastAPI router for the new feature, isolated from the legacy worksheet routes.
-
-Mount create_router(...) in the operating app after its source is available.
-create_app(...) provides a local development/QA interface on 127.0.0.1 only.
-"""
+"""단어장과 시험지 API 라우터, 오프라인 개발·검증용 앱 팩토리."""
 
 from __future__ import annotations
 
@@ -27,6 +23,12 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from .storage import ConflictError, JsonStore, StoreError, now
 
 PREFIX = "/api/word-meaning"
+MAX_UPLOAD_BYTES = 64 * 1024 * 1024
+
+
+def _check_upload_size(content):
+    if not content or len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "빈 파일 또는 64MB를 초과하는 파일은 등록할 수 없습니다.")
 
 
 class GenerateBody(BaseModel):
@@ -236,9 +238,7 @@ class FeatureService:
             raise HTTPException(409, str(error)) from None
 
     def assert_bank_write_ownership(self):
-        assertion = getattr(self, '_bank_write_assertion', None)
-        if assertion is not None:
-            assertion()
+        """로컬 쓰기는 self.lock이 보호하고 클라우드 런타임은 리스 검사로 교체한다."""
 
     def delete_bank(self, bank_id, version, mode='soft'):
         try:
@@ -344,15 +344,14 @@ class FeatureService:
             result['bank_id'] = value['result_id']
         return result
 
-    def register_upload(self, filename, content):
+    def register_upload(self, filename, content, *, legacy_original_id=None):
         """Register bytes through one deduplicated path for uploads and existing Drive files."""
         self.assert_new_import_allowed()
         filename = Path((filename or "").replace("\\", "/")).name
         extension = Path(filename).suffix.lower()
         if extension not in {".pdf", ".xlsx"}:
             raise HTTPException(415, "PDF 또는 XLSX 파일을 선택해 주세요.")
-        if not content or len(content) > 64 * 1024 * 1024:
-            raise HTTPException(413, "빈 파일 또는 64MB를 초과하는 파일은 등록할 수 없습니다.")
+        _check_upload_size(content)
         if extension == ".pdf" and not content.startswith(b"%PDF-"):
             raise HTTPException(422, "올바른 PDF 파일이 아닙니다.")
         if extension == ".xlsx" and not content.startswith(b"PK"):
@@ -365,22 +364,33 @@ class FeatureService:
                 raise HTTPException(422, str(error)) from None
         sha = hashlib.sha256(content).hexdigest()
         bank_id = "b_" + sha[:24]
-        with self.lock:
+        with self.lock, self.bank_write_context(bank_id):
             try:
                 existing = self.store.get("banks", bank_id)
+            except KeyError:
+                existing = None
+            if existing is not None:
                 if existing.get('deletion_pending'):
                     raise HTTPException(409, '단어장 완전 삭제를 마친 뒤 다시 등록해 주세요.')
-                if existing.get("deleted_at"):
-                    existing.pop("deleted_at")
-                    try:
+                missing_id = legacy_original_id and legacy_original_id not in existing.get("source", {}).get("legacy_original_ids", [])
+                if missing_id or existing.get("deleted_at"):
+                    existing.pop("deleted_at", None)
+                    if missing_id:
+                        existing.setdefault("source", {}).setdefault("legacy_original_ids", []).append(legacy_original_id)
+                        self.store.put("banks", existing, expected_version=existing["version"])
+                    else:
                         self.store.put_metadata("banks", existing, expected_version=existing["version"])
-                    except ConflictError as error:
-                        raise HTTPException(409, str(error)) from None
                 return {"status": "existing", "bank_id": existing["id"]}
-            except KeyError:
-                pass
             for job in self.store.list("jobs"):
                 if job["kind"] == "import" and job["payload"]["sha256"] == sha:
+                    if legacy_original_id and legacy_original_id not in job["payload"].get("legacy_original_ids", []):
+                        coordinator = getattr(self, "import_coordinator", None)
+                        if job.get("engine_version") == 2 and coordinator is not None:
+                            # 작업 상태를 기록하는 작업자가 링크 목록을 덮어쓰지 않도록 준비 기록에서 병합한다.
+                            coordinator.stage_prepare(job["id"], linked_original=legacy_original_id)
+                        else:
+                            job["payload"].setdefault("legacy_original_ids", []).append(legacy_original_id)
+                            job = self.store.put("jobs", job, expected_version=job["version"])
                     if job["status"] in {"failed", "interrupted"}:
                         if job.get('registration_policy') == 'registration-audit-v1' and getattr(self, 'import_coordinator', None):
                             self.import_coordinator.retry(job['id'])
@@ -394,8 +404,11 @@ class FeatureService:
             directory.mkdir(parents=True, exist_ok=True)
             stored_name = sha + extension
             (directory / stored_name).write_bytes(content)
+            payload = {"sha256": sha, "filename": filename, "stored_name": stored_name}
+            if legacy_original_id:
+                payload["legacy_original_ids"] = [legacy_original_id]
             job = self.store.put("jobs", {"id": "j_" + uuid.uuid4().hex, "kind": "import", "status": "queued", "automatic_recovery_version": 1,
-                "payload": {"sha256": sha, "filename": filename, "stored_name": stored_name}, "message": "단어은행 등록 대기",
+                "payload": payload, "message": "단어은행 등록 대기",
                 **self.new_import_fields()})
             self.dispatch(job)
         return {"status": "processing", "job_id": job["id"]}
@@ -771,13 +784,13 @@ class FeatureService:
         bank["source"]["filename"] = payload["filename"]
         bank["source"]["stored_name"] = payload["stored_name"]
         bank["source"]["sha256"] = payload["sha256"]
-        bank["title"] = Path(payload["filename"]).stem
+        bank["title"] = Path(payload["filename"]).stem.strip() or "단어장"
         bank["storage"] = "local"
-        if payload.get("legacy_original_ids"):
-            bank["source"]["legacy_original_ids"] = list(payload["legacy_original_ids"])
-        # Merge only after parsing, under the same lock as edits and deletion.
-        # A retry cannot overwrite corrections, a rename, or unregistration.
-        with self.lock:
+        # 편집·등록 취소와 같은 잠금 순서로 최신 작업의 링크를 보존한다.
+        with self.lock, self.bank_write_context(bank["id"]):
+            latest_ids = self.store.get("jobs", job["id"])["payload"].get("legacy_original_ids", [])
+            if latest_ids:
+                bank["source"]["legacy_original_ids"] = list(latest_ids)
             try:
                 old = self.store.get("banks", bank["id"])
             except KeyError:
@@ -873,19 +886,12 @@ def create_router(service):
     async def upload(file: UploadFile = File(...)):
         from starlette.concurrency import run_in_threadpool
         await run_in_threadpool(service.assert_new_import_allowed)
-        filename = Path((file.filename or "").replace("\\", "/")).name
-        extension = Path(filename).suffix.lower()
-        if extension not in {".pdf", ".xlsx"}:
-            raise HTTPException(415, "PDF 또는 XLSX 파일을 선택해 주세요.")
-        content = await file.read(64 * 1024 * 1024 + 1)
-        await file.close()
-        if not content or len(content) > 64 * 1024 * 1024:
-            raise HTTPException(413, "빈 파일 또는 64MB를 초과하는 파일은 등록할 수 없습니다.")
-        if extension == ".pdf" and not content.startswith(b"%PDF-"):
-            raise HTTPException(422, "올바른 PDF 파일이 아닙니다.")
-        if extension == ".xlsx" and not content.startswith(b"PK"):
-            raise HTTPException(422, "올바른 Excel 파일이 아닙니다.")
-        return await run_in_threadpool(service.register_upload, filename, content)
+        try:
+            content = await file.read(MAX_UPLOAD_BYTES + 1)
+        finally:
+            await file.close()
+        _check_upload_size(content)
+        return await run_in_threadpool(service.register_upload, file.filename, content)
 
     @router.get("/banks/{bank_id}")
     def bank(bank_id: str, view: Literal["full", "management"] = "full"):
@@ -928,9 +934,16 @@ def create_router(service):
             except ConflictError as error:
                 raise HTTPException(409, str(error)) from None
 
+    def save_bank_edit(bank, version):
+        from .source_integrity import refresh_bank_state, assert_source_manifest
+        refresh_bank_state(bank)
+        assert_source_manifest(bank)
+        service.assert_bank_write_ownership()
+        return service.public_bank(service.store.put("banks", bank, expected_version=version))
+
     @router.patch("/banks/{bank_id}/edit")
     def edit_bank(bank_id: str, body: BankEditBody):
-        from .source_integrity import freeze_source_manifest, apply_entry_edit, apply_unit_edit, refresh_bank_state, assert_source_manifest
+        from .source_integrity import freeze_source_manifest, apply_entry_edit, apply_unit_edit
         with service.lock, service.bank_write_context(bank_id):
             original = service.get("banks", bank_id)
             if original["version"] != body.version:
@@ -966,17 +979,11 @@ def create_router(service):
                 raise HTTPException(422, str(error)) from None
             if not changed:
                 return service.public_bank(original)
-            refresh_bank_state(bank)
-            assert_source_manifest(bank)
-            try:
-                service.assert_bank_write_ownership()
-                return service.public_bank(service.store.put("banks", bank, expected_version=body.version))
-            except ConflictError as error:
-                raise HTTPException(409, str(error)) from None
+            return save_bank_edit(bank, body.version)
 
     @router.patch("/banks/{bank_id}/entries")
     def update_entries(bank_id: str, body: EntriesBody):
-        from .source_integrity import freeze_source_manifest, apply_entry_edit, refresh_bank_state, assert_source_manifest
+        from .source_integrity import freeze_source_manifest, apply_entry_edit
         with service.lock, service.bank_write_context(bank_id):
             if not body.reviewer.strip():
                 raise HTTPException(422, "검토자를 입력해 주세요.")
@@ -1003,17 +1010,11 @@ def create_router(service):
                     raise HTTPException(422, str(error)) from None
             if not changed:
                 return service.public_bank(original)
-            refresh_bank_state(bank)
-            assert_source_manifest(bank)
-            try:
-                service.assert_bank_write_ownership()
-                return service.public_bank(service.store.put("banks", bank, expected_version=body.version))
-            except ConflictError as error:
-                raise HTTPException(409, str(error)) from None
+            return save_bank_edit(bank, body.version)
 
     @router.patch("/banks/{bank_id}/entries/{entry_id}")
     def update_entry(bank_id: str, entry_id: str, body: EntryBody):
-        from .source_integrity import freeze_source_manifest, apply_entry_edit, refresh_bank_state, assert_source_manifest
+        from .source_integrity import freeze_source_manifest, apply_entry_edit
         with service.lock, service.bank_write_context(bank_id):
             bank = service.get("banks", bank_id)
             if bank["version"] != body.version:
@@ -1030,13 +1031,7 @@ def create_router(service):
                 raise HTTPException(422, str(error)) from None
             if not changed:
                 return service.public_bank(original)
-            refresh_bank_state(bank)
-            assert_source_manifest(bank)
-            try:
-                service.assert_bank_write_ownership()
-                return service.public_bank(service.store.put("banks", bank, expected_version=body.version))
-            except ConflictError as error:
-                raise HTTPException(409, str(error)) from None
+            return save_bank_edit(bank, body.version)
 
     @router.get("/banks/{bank_id}/source")
     def bank_source(bank_id: str):
@@ -1045,7 +1040,7 @@ def create_router(service):
 
     @router.patch("/banks/{bank_id}/units/{unit_id}")
     def update_unit(bank_id: str, unit_id: str, body: UnitBody):
-        from .source_integrity import freeze_source_manifest, apply_unit_edit, refresh_bank_state, assert_source_manifest
+        from .source_integrity import freeze_source_manifest, apply_unit_edit
         with service.lock, service.bank_write_context(bank_id):
             bank = service.get("banks", bank_id)
             if bank["version"] != body.version:
@@ -1060,13 +1055,7 @@ def create_router(service):
                 raise HTTPException(422, "단원명을 입력해 주세요.")
             if not apply_unit_edit(unit, label=label, at=now(), status=body.status, review_reason=body.review_reason):
                 return service.public_bank(original)
-            refresh_bank_state(bank)
-            assert_source_manifest(bank)
-            try:
-                service.assert_bank_write_ownership()
-                return service.public_bank(service.store.put("banks", bank, expected_version=body.version))
-            except ConflictError as error:
-                raise HTTPException(409, str(error)) from None
+            return save_bank_edit(bank, body.version)
 
     @router.get("/banks/{bank_id}/entries/{entry_id}/image")
     def source_crop(bank_id: str, entry_id: str):
@@ -1490,8 +1479,6 @@ def create_router(service):
                 raise HTTPException(409, str(error)) from None
             except ExamError as error:
                 raise HTTPException(422, str(error)) from None
-            except ExamError as error:
-                raise HTTPException(422, str(error)) from None
 
     @router.post("/worksheets/{worksheet_id}/review")
     def review(worksheet_id: str, body: ReviewBody):
@@ -1576,12 +1563,7 @@ def create_router(service):
 
 def create_app(root=None, provider=None, ocr_engine=None):
     package_parent = Path(__file__).resolve().parent.parent
-    # The source checkout and the packaged runtime share the existing app assets.
-    static_directory = (
-        package_parent / "static"
-        if package_parent.name == "worksheet-webapp"
-        else package_parent / "worksheet-webapp" / "static"
-    )
+    static_directory = package_parent / "static"
     if not (static_directory / "styles.css").is_file():
         raise RuntimeError(f"공통 정적 파일 폴더를 찾을 수 없습니다: {static_directory}")
     root = root or Path(__file__).resolve().parent.parent / ".local" / "word-meaning"

@@ -30,11 +30,15 @@ def _key(value):
     return ' '.join(_text(value).split()).casefold()
 
 
-def _source(bank, unit_ids):
-    units = bank.get('units', [])
-    allowed = {unit['id'] for unit in units}
+def validate_selection(bank, unit_ids):
+    """단어은행 내 선택한 챕터 ID 목록의 유효성을 검증한다."""
+    allowed = {unit['id'] for unit in bank.get('units', [])}
     if not isinstance(unit_ids, list) or not unit_ids or len(set(unit_ids)) != len(unit_ids) or not set(unit_ids) <= allowed:
         raise AppError('등록된 챕터를 선택해 주세요.', 422, 'invalid_selection')
+
+
+def _source(bank, unit_ids):
+    validate_selection(bank, unit_ids)
     selected, known, contexts = {}, {}, []
     for entry in bank.get('entries', []):
         word = _text(entry.get('word'))
@@ -108,7 +112,10 @@ def _materials(item, kind):
 
 
 def capabilities(bank, unit_ids):
-    records = _source(bank, unit_ids)
+    return _capabilities(bank, unit_ids, _source(bank, unit_ids))
+
+
+def _capabilities(bank, unit_ids, records):
     available = []
     if len(records) >= 5:
         available.append('def_match')
@@ -283,7 +290,8 @@ def generate(bank, unit_ids, count, *, seed=None, question_types=None, generatio
         select_words(bank, unit_ids, allow_partial=allow_partial)
     except ExamError as error:
         raise AppError(str(error), 422, error.code, **error.details) from None
-    info = capabilities(bank, unit_ids)
+    records = _source(bank, unit_ids)
+    info = _capabilities(bank, unit_ids, records)
     selected_types = question_types or info['available_types']
     allowed = set(info['available_types']) | ({'pair_ko'} if 'def_match' in info['available_types'] else set())
     if not selected_types or not isinstance(selected_types, list) or any(kind not in allowed for kind in selected_types):
@@ -293,7 +301,6 @@ def generate(bank, unit_ids, count, *, seed=None, question_types=None, generatio
     if type(seed) not in (str, int):
         raise AppError('생성 기준값을 확인해 주세요.', 422, 'invalid_seed')
     rng = random.Random(seed)
-    records = _source(bank, unit_ids)
     rng.shuffle(records)
     questions = []
     for index in range(count):
@@ -338,7 +345,7 @@ def reuse_saved_material(bank, question):
         for text in texts:
             field = 'passages' if kind == 'passage_blank' else 'examples'
             key = 'text' if kind == 'passage_blank' else 'sentence'
-            add(word, field, {key: re.sub(r'_{3,}', word, text), 'translation': payload.get('ko', '')})
+            add(word, field, {key: re.sub(r'_{3,}', lambda _: word, text), 'translation': payload.get('ko', '')})
     elif kind == 'sentence_match':
         for index, row in enumerate(payload['items'], 1):
             add(row['u'], 'examples', {'sentence': row['en'], 'translation': ''})

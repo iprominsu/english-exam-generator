@@ -193,14 +193,3 @@ def upload_bytes(data: bytes, name: str, mime: str, folder_id: str, file_id: str
         )
         .execute()
     )
-
-
-def read_with_retry(call):
-    """Only read operations; never automatically replay creates or AI calls."""
-    for attempt in range(3):
-        try:
-            return call()
-        except Exception as error:
-            if status_of(error) not in (429, 500, 502, 503, 504) or attempt == 2:
-                raise
-            time.sleep(2 ** attempt)

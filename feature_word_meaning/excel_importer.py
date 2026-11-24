@@ -9,8 +9,6 @@ import unicodedata
 import zipfile
 from pathlib import Path
 
-from openpyxl import load_workbook
-
 
 XLSX_MAX_UNCOMPRESSED = 256 * 1024 * 1024
 XLSX_MAX_MEMBER = 128 * 1024 * 1024
@@ -72,19 +70,28 @@ def _text(value):
     return "" if value is None else unicodedata.normalize("NFC", str(value)).strip()
 
 
-def _column_role(value):
-    label = re.sub(r"\s+", " ", _text(value)).casefold().strip(" .:=↔")
-    aliases = {
-        'word': {'단어', '영단어', '어휘', '표제어', 'word', 'english', 'english word', 'headword', 'lexeme', 'vocabulary', 'term'},
-        'number': {'번호', '연번', 'no', 'number'},
-        '유의어': {'유의어', '동의어', 'synonym', 'synonyms'},
-        '반의어': {'반의어', 'antonym', 'antonyms'},
-        '파생어': {'파생어', 'derivative', 'derivatives'},
-        'metadata': {'확인', '체크', 'check', 'checked', '품사', 'pos', 'part of speech', '단원', '챕터', '차시', 'chapter', 'unit', 'day'},
-    }
-    if re.fullmatch(r'(?:뜻|의미|뜻풀이|meaning|gloss|korean gloss)(?:\s*\d+)?', label):
-        return 'meaning'
-    return next((role for role, labels in aliases.items() if label in labels), None)
+_COLUMN_ROLES = {
+    alias: role
+    for role, aliases in {
+        "word": ("단어", "영단어", "어휘", "표제어", "word", "words", "english", "englishword", "headword", "lexeme", "vocabulary", "term"),
+        "meaning": ("뜻", "의미", "뜻풀이", "해석", "우리말", "한글뜻", "한국어뜻", "meaning", "meanings", "korean", "koreangloss", "definition", "gloss"),
+        "number": ("번호", "연번", "순번", "no", "number"),
+        "유의어": ("유의어", "동의어", "synonym", "synonyms"),
+        "반의어": ("반의어", "antonym", "antonyms"),
+        "파생어": ("파생어", "derivative", "derivatives"),
+        "metadata": ("확인", "암기", "체크", "check", "checked", "품사", "pos", "partofspeech", "단원", "챕터", "차시", "chapter", "unit", "day"),
+    }.items()
+    for alias in aliases
+}
+
+
+def column_role(value):
+    """표제와 번호가 붙은 뜻 열을 판독기와 원본 검수에서 같은 기준으로 분류한다."""
+    key = re.sub(r"[\s.:=↔→()\[\]_-]+", "", _text(value).casefold())
+    if key and key[-1].isdecimal():
+        if _COLUMN_ROLES.get(re.sub(r"\d+$", "", key)) == "meaning":
+            return "meaning"
+    return _COLUMN_ROLES.get(key)
 
 
 def structured_sheet_rows(rows):
@@ -96,7 +103,7 @@ def structured_sheet_rows(rows):
     rows = [list(row) for row in rows]
     headers = []
     for index, row in enumerate(rows):
-        roles = [_column_role(value) for value in row]
+        roles = [column_role(value) for value in row]
         if roles.count('word') == 1 and 'meaning' in roles:
             if any(_text(value) and role is None for value, role in zip(row, roles)):
                 return None
@@ -152,6 +159,7 @@ def structured_sheet_rows(rows):
 
 
 def import_excel(path, *, progress=None):
+    from openpyxl import load_workbook
     path = Path(path)
     validate_xlsx_archive(path)
     sha = hashlib.sha256(path.read_bytes()).hexdigest()

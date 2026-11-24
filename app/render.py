@@ -18,6 +18,11 @@ def esc(s):
     return html.escape(str(s)) if s is not None else ""
 
 
+def _safe_instruction_html(text):
+    """HTML 이스케이프 후 짝이 맞는 <u>...</u> 밑줄 태그만 안전하게 복원한다."""
+    return re.sub(r"&lt;u&gt;(.*?)&lt;/u&gt;", r"<u>\g<1></u>", esc(text), flags=re.S)
+
+
 def underline_word(sentence, word):
     if not word:
         return esc(sentence)
@@ -42,7 +47,7 @@ def render_block(q):
     t = q["type"]
     head = (
         f'<div class="q-head"><span class="q-no">{q["no"]}.</span> '
-        f'<span class="q-inst">{esc(q["instruction"]).replace("&lt;u&gt;", "<u>").replace("&lt;/u&gt;", "</u>")}</span></div>'
+        f'<span class="q-inst">{_safe_instruction_html(q["instruction"])}</span></div>'
     )
     body = ""
 
@@ -243,21 +248,22 @@ async def html_to_pdf(html_str: str, header_html: str, footer_html: str) -> byte
     """HTML 문자열을 바로 PDF 바이트로 렌더링한다 (디스크에 쓰지 않음)."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(args=["--no-sandbox"], executable_path=os.environ.get("PDF_BROWSER_EXECUTABLE"))
-        page = await browser.new_page()
-        await page.route("**/*", lambda route: route.abort())
-        await page.emulate_media(media="print")
-        await page.set_content(html_str, wait_until="load")
-        await page.evaluate("document.fonts.ready")
-        pdf_bytes = await page.pdf(
-            format="A4",
-            print_background=True,
-            display_header_footer=True,
-            header_template=header_html,
-            footer_template=footer_html,
-            margin={"top": "16mm", "bottom": "14mm", "left": "8mm", "right": "8mm"},
-        )
-        await browser.close()
-        return pdf_bytes
+        try:
+            page = await browser.new_page()
+            await page.route("**/*", lambda route: route.abort())
+            await page.emulate_media(media="print")
+            await page.set_content(html_str, wait_until="load")
+            await page.evaluate("document.fonts.ready")
+            return await page.pdf(
+                format="A4",
+                print_background=True,
+                display_header_footer=True,
+                header_template=header_html,
+                footer_template=footer_html,
+                margin={"top": "16mm", "bottom": "14mm", "left": "8mm", "right": "8mm"},
+            )
+        finally:
+            await browser.close()
 
 
 def header_template():

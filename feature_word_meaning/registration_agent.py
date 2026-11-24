@@ -162,7 +162,7 @@ def materialize(region, plan, sha):
         if region['kind']=='cells' and any('문장' in i['text'] and '번호' in i['text'] for i in region['items']):
             current=re.sub(r'\s+\d{1,3}(?:\s*[,·–-]\s*\d{1,3})*$','',current)
         entries.append({'id':'e_'+digest([sha,region['id'],mapping['word_refs'],mapping['meaning_refs']])[:24],
-            'unit_id':unit_id,'source_number':int(number) if number.isdigit() else len(entries)+1,
+            'unit_id':unit_id,'source_number':int(number) if number.isdecimal() else len(entries)+1,
             'word_raw':word,'word':current,'meaning_raw':meaning,'meaning':meaning.strip(),
             'source':source,'related':related,'status':'ready','issues':[]})
     for group in plan['metadata_rows']:

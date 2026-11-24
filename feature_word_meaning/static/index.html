@@ -102,7 +102,6 @@ let scopeMode='range';
 let scopeReviewError=null;
 let availableCountCorrection=null;
 let previewTask=null,previewController=null,previewRenderer=null;
-const pdfDownloads=new Set();
 let loadPdfRenderer=()=>import('/static/vendor/pdfjs/pdf.min.mjs');
 let autoResumeRunning=false;const resumeQueue=[],resumeQueued=new Set();
 const entryDrafts=new Map(),pollingJobs=new Map(),progressOwners=new Map(),regenerationStates=new Map(),editorDisabled=new Map();
@@ -747,7 +746,7 @@ function pollJob(id,target,{foreground=true,started=performance.now(),owner=null
   const tick=()=>{if(parentMonitor?.job)clock.job=parentMonitor.job;if(!dismissedJobMessages.has(id))paintJobProgress(clock.job,target);};
   jobElapsedStates.set(id,clock);const timer=setInterval(tick,1000);
   const task=parentMonitor?parentMonitor.promise.then(job=>{showJobProgress(job,target);return job;}):(async()=>{
-    let stepBusy=false,stepError=null,nextStepAt=0,nextJob=null,transportFailures=0,observed=null;
+    let stepError=null,nextJob=null,transportFailures=0,observed=null;
     for(;;){
       if((observed?.kind==='import'||target==='import-progress')&&!importPageVisible()){await importWait(3000);continue;}
       let job;
@@ -788,13 +787,6 @@ function pollJob(id,target,{foreground=true,started=performance.now(),owner=null
         }
         if(nextJob)continue;
         await new Promise(resolve=>setTimeout(resolve,1200));continue;
-      }
-      if(requestWorkMode()&&!stepBusy&&Date.now()>=nextStepAt){
-        stepBusy=true;
-        request('/jobs/'+id+'/step',{method:'POST'}).catch(error=>{
-          if(error.status===409)nextStepAt=Date.now()+5000;
-          else stepError=error;
-        }).finally(()=>{stepBusy=false;});
       }
       await new Promise(resolve=>setTimeout(resolve,1200));
     }
@@ -1221,14 +1213,10 @@ function currentModelOptions(){
   if(featureStatus?.generation_available===false)throw Error('시험지 생성 기능을 사용할 수 없습니다. 잠시 후 다시 시도하세요.');
   return{provider:'script',reasoning:'none'};
 }
-function safeDriveURL(value){
-  if(!value)return null;
-  try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password&&['drive.google.com','docs.google.com'].includes(url.hostname)?url.href:null;}catch{return null;}
-}
 function driveLinks(item){
   const d=item?.drive||item?.drive_links||{};
   const links=d.links||{};
-  return{folder:safeDriveURL(d.folder_url||item?.drive_folder_url),sheet:safeDriveURL(links.bank||links.sheet||d.sheet_url||d.bank_sheet_url||item?.sheet_url),source:safeDriveURL(links.original||d.source_url||item?.source?.webViewLink),student:safeDriveURL(links.student||d.student_pdf_url),answer:safeDriveURL(links.answer||d.answer_pdf_url)};
+  return{folder:window.ExamContracts.driveURL(d.folder_url||item?.drive_folder_url),sheet:window.ExamContracts.driveURL(links.bank||links.sheet||d.sheet_url||d.bank_sheet_url||item?.sheet_url),source:window.ExamContracts.driveURL(links.original||d.source_url||item?.source?.webViewLink),student:window.ExamContracts.driveURL(links.student||d.student_pdf_url),answer:window.ExamContracts.driveURL(links.answer||d.answer_pdf_url)};
 }
 function linksHTML(links){
   return '<div class="drive-links">'+links.filter(([url])=>url).map(([url,label])=>'<a href="'+esc(url)+'" target="_blank" rel="noopener">'+label+'</a>').join('')+'</div>';
@@ -1240,11 +1228,11 @@ function showWorksheetDriveLinks(){
   const links=driveLinks(currentWorksheet);$('worksheet-drive-links').innerHTML=linksHTML([[links.folder,'드라이브 폴더 열기']]);
 }
 async function openDrive(){
-  let url=safeDriveURL(featureStatus?.drive_folder_url);
+  let url=window.ExamContracts.driveURL(featureStatus?.drive_folder_url);
   if(!url){
     try{
       const res=await fetch('/api/drive-folder',{signal:networkSignal(90000)});if(!res.ok)throw Error('드라이브 연결을 확인해 주세요.');
-      const info=await res.json();url=safeDriveURL(info.web_link);
+      const info=await res.json();url=window.ExamContracts.driveURL(info.web_link);
     }catch(error){
       if(error?.name==='TimeoutError')throw Error('드라이브 응답이 지연되고 있습니다. 잠시 후 다시 열어 주세요.');
       throw error;

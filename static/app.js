@@ -1,15 +1,6 @@
 
 /* ---------------- theme ---------------- */
 try{const t=localStorage.getItem('mock-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
-function toggleTheme(){
-  const r=document.documentElement;
-  const cur=r.getAttribute('data-theme')|| (matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light');
-  const next=cur==='dark'?'light':'dark';
-  r.setAttribute('data-theme',next);
-  try{localStorage.setItem('mock-theme',next);}catch(e){}
-  syncWordMeaningTheme();
-}
-
 /* Icons are decorative; labels and business state remain on their controls. */
 function uiIcon(name,size=16,className=''){
   return window.MelodyIcons?window.MelodyIcons.svg(name,{size,className}):'';
@@ -169,12 +160,7 @@ document.querySelectorAll('[data-leave]').forEach(button=>button.addEventListene
 document.getElementById('unsavedDialog').addEventListener('cancel',()=>{document.getElementById('unsavedDialog').returnValue='stay';});
 
 /* ---------------- day selects ---------------- */
-function fillDays(sel,from,to){for(let d=from;d<=to;d++){const o=document.createElement('option');o.value=d;o.textContent=chapterUnits[d-1]?.label||'챕터 '+d;sel.appendChild(o);}}
-/* ---------------- mode / provider ---------------- */
-let mode='single',provider='gpt',reasoning='high';
-const reasoningLabels={low:'Light',medium:'Medium',high:'High',xhigh:'XHigh'};
-try{const saved=localStorage.getItem('melody-gpt-reasoning');if(Object.hasOwn(reasoningLabels,saved))reasoning=saved;}catch(e){}
-let gptUsageCheckedAt=0,gptUsageLoading=false;
+let mode='single';
 function setMode(m){
   if(generationBusy||!['single','group','bulk'].includes(m))return;
   clearError();
@@ -237,13 +223,9 @@ setInterval(async()=>{
   if(legacyPreparationPolling||document.visibilityState==='hidden'||worksheetKind!=='standard'||!['overview','dashboard'].includes(screenName)||generationBusy||legacyCapabilitiesLoading)return;
   legacyPreparationPolling=true;try{await updateLegacyCapabilities({background:true});}finally{legacyPreparationPolling=false;}
 },3000);
-function setProvider(){provider='script';document.getElementById('genHint').textContent='단어장의 학습 자료를 사용해 문항을 자동 생성합니다.';}
-function closeReasoningMenu(){}
-async function refreshGptUsage(){}
-
 /* ---------------- 어휘 파일 ---------------- */
 let vocabFiles=[];
-let vocabSerial=0,vocabDeleteTarget=null,vocabDeleteBusy=false;
+let vocabSerial=0;
 let availableDays=[],chapterUnits=[],daysLoading=false,daysSerial=0,loadedDaysBank='';
 async function syncVocabSelection(force=false){
   const sel=document.getElementById('vocab'),previous=sel.value;sel.replaceChildren();
@@ -288,84 +270,6 @@ async function loadDays({preserve=false,bank:providedBank=null}={}){
   finally{if(serial===daysSerial){daysLoading=false;updateGenerationSummary();updateLegacyCapabilities();}}
 }
 document.getElementById('vocab').addEventListener('change',()=>{clearError();loadDays();});
-function renderFileList(){
-  const box=document.getElementById('filelist');if(!box)return;box.replaceChildren();
-  if(!vocabFiles.length){const empty=document.createElement('span');empty.className='field-note me-help';empty.textContent='아직 업로드된 파일이 없습니다';box.appendChild(empty);return;}
-  for(const f of vocabFiles){
-    const item=document.createElement('details');item.className='file-item';
-    const label=document.createElement('summary');label.className='file-chip';
-    const tick=document.createElement('span');tick.className='ok';tick.innerHTML=uiIcon('check');tick.setAttribute('aria-hidden','true');
-    const name=document.createElement('span');name.className='file-name';name.textContent=f.name;
-    label.appendChild(tick);label.appendChild(name);item.appendChild(label);
-    const actions=document.createElement('div');actions.className='file-actions';
-    const link=document.createElement('a');link.className='btn sm outline me-button';link.dataset.variant='secondary';link.dataset.size='sm';link.textContent='열기';
-    link.href=C.driveURL(f.webViewLink)||('https://drive.google.com/file/d/'+encodeURIComponent(f.id)+'/view');
-    link.target='_blank';link.rel='noopener noreferrer';link.setAttribute('aria-label',f.name+' 열기');actions.appendChild(link);
-    const meaning=document.createElement('button');meaning.type='button';meaning.className='btn sm outline me-button';meaning.dataset.variant='secondary';meaning.dataset.size='sm';meaning.textContent='단어–뜻 시험';
-    meaning.setAttribute('aria-label',f.name+'으로 단어–뜻 시험 만들기');meaning.disabled=generationBusy;
-    meaning.addEventListener('click',()=>openWordMeaning({source_file_id:f.id}));actions.appendChild(meaning);
-    const remove=document.createElement('button');remove.type='button';remove.className='btn sm danger-ghost me-button';remove.dataset.variant='danger';remove.dataset.size='sm';remove.textContent='삭제';remove.dataset.vocabDelete=f.id;
-    remove.disabled=generationBusy||vocabDeleteBusy;remove.setAttribute('aria-label',f.name+' 삭제');
-    remove.addEventListener('click',()=>requestVocabDelete(f.id));actions.appendChild(remove);item.appendChild(actions);
-    item.addEventListener('toggle',()=>{if(item.open)for(const other of box.querySelectorAll('details'))if(other!==item)other.open=false;});
-    item.addEventListener('keydown',e=>{if(e.key==='Escape'){item.open=false;label.focus();}});
-    box.appendChild(item);
-  }
-}
-function vocabDeletionBlocked(fileId){
-  return generationBusy||(batch?.params.vocab_file_id===fileId&&batch.tasks.some(t=>['pending','running','uncertain','failed'].includes(t.state)));
-}
-function requestVocabDelete(fileId){
-  if(vocabDeleteBusy)return;
-  const file=vocabFiles.find(f=>f.id===fileId);if(!file)return;
-  if(vocabDeletionBlocked(fileId)){showApiError(Error('이 파일로 남아 있는 생성 작업을 완료하거나 취소한 뒤 삭제해 주세요.'),'vocabularyFilesError');return;}
-  vocabDeleteTarget={id:file.id,name:file.name};
-  document.getElementById('vocabDeleteName').textContent=file.name;
-  document.getElementById('vocabDeleteError').textContent='';
-  const dialog=document.getElementById('vocabDeleteDialog');if(window.MelodyUI)window.MelodyUI.openDialog(dialog);else dialog.showModal();
-}
-function cancelVocabDelete(){if(!vocabDeleteBusy){vocabDeleteTarget=null;document.getElementById('vocabDeleteDialog').close();}}
-document.getElementById('vocabDeleteDialog').addEventListener('cancel',e=>{if(vocabDeleteBusy)e.preventDefault();else vocabDeleteTarget=null;});
-async function confirmVocabDelete(){
-  if(vocabDeleteBusy||!vocabDeleteTarget)return;
-  const target={...vocabDeleteTarget},error=document.getElementById('vocabDeleteError');
-  if(vocabDeletionBlocked(target.id)){error.textContent='남아 있는 생성 작업을 완료하거나 취소한 뒤 삭제해 주세요.';return;}
-  vocabDeleteBusy=true;vocabSerial++;clearError();error.textContent='';
-  const confirm=document.getElementById('vocabDeleteConfirm'),cancel=document.getElementById('vocabDeleteCancel');
-  confirm.disabled=cancel.disabled=true;confirm.textContent='삭제 중…';
-  try{
-    const result=await apiSend('/api/vocab/'+encodeURIComponent(target.id),'DELETE');
-    if(result?.id!==target.id||result?.deleted!==true)throw Error('삭제 결과를 확인하지 못했습니다. 목록을 새로고침해 주세요.');
-    vocabSerial++;vocabFiles=vocabFiles.filter(f=>f.id!==target.id);
-    vocabDeleteTarget=null;document.getElementById('vocabDeleteDialog').close();
-    await syncVocabSelection();
-    toast('파일 삭제 완료','해당 엑셀을 구글 드라이브 휴지통으로 옮겼습니다. 기존 시험지는 유지됩니다.','ok');
-  }catch(e){error.textContent=C.safeMessage(e.message,'파일을 삭제하지 못했습니다. 다시 시도해 주세요.');}
-  finally{vocabDeleteBusy=false;confirm.disabled=cancel.disabled=false;confirm.textContent='삭제';renderFileList();}
-}
-async function onUpload(input){
-  const f=input.files&&input.files[0];if(!f)return;
-  clearError();const epoch=currentErrorEpoch();
-  const fd=new FormData();fd.append('file',f);
-  try{
-    if(/\.pdf$/i.test(f.name)){
-      const response=await fetch('/api/word-meaning/imports',{method:'POST',body:fd});
-      if(!response.ok)throw await apiError(response);
-      const imported=await response.json();
-      const target=imported.bank_id?{bank_id:imported.bank_id}:imported.job_id?{job_id:imported.job_id}:null;
-      if(!target)throw Error('단어장 등록 상태를 확인하지 못했습니다. 작업 목록을 확인해 주세요.');
-      input.value='';
-      await openWordMeaning(target);
-      return;
-    }
-    const res=await fetch('/api/vocab',{method:'POST',body:fd});
-    if(!res.ok) throw await apiError(res);
-    await loadVocabList();
-    toast('업로드 완료','"'+f.name+'"을(를) 구글 드라이브에 저장했습니다.','ok');
-  }catch(e){showApiError(e,'vocabularyFilesError',epoch);}
-  input.value='';
-}
-
 function isFeatureWorksheetKind(kind){return kind==='word-meaning'||kind==='meaning-writing';}
 function getWordMeaningFrame(kind=worksheetKind){return document.getElementById(kind==='meaning-writing'?'meaningWritingFrame':'wordMeaningFrame');}
 function getWordMeaningFrames(){return ['wordMeaningFrame','meaningWritingFrame'].map(id=>document.getElementById(id)).filter(Boolean);}
@@ -385,9 +289,11 @@ window.addEventListener('melody-bank-updated',event=>{
       vocabFiles=vocabFiles.map(item=>item.id===bank.id?{...item,title:bank.title,name:bank.title,version:bank.version,counts:bank.counts}:item);
       const select=document.getElementById('vocab'),option=[...select.options].find(item=>item.value===bank.id);
       if(option)option.textContent=bank.title;
-      if(select.value===bank.id)await loadDays({preserve:true,bank});
+      await Promise.all([
+        select.value===bank.id?loadDays({preserve:true,bank}):undefined,
+        notifyWordMeaningFrames('bankUpdated',bank),
+      ]);
     }
-    if(serial===bankUpdateSerial)await notifyWordMeaningFrames('bankUpdated',bank);
   })().catch(()=>{if(serial===bankUpdateSerial)toast('단어장 저장 완료','출제 화면의 새로고침이 필요합니다.','warn');});
 });
 async function openWordMeaning(target,kind='word-meaning'){
@@ -506,12 +412,11 @@ function setWorksheetSort(value){
 function toggleWorksheetSortDirection(){
   worksheetSortDirection=worksheetSortDirection==='desc'?'asc':'desc';
   const button=document.getElementById('worksheetSortDirection');
-  const label=worksheetSortDirection==='desc'?'내림차순 · 오름차순으로 변경':'오름차순 · 내림차순으로 변경';
-  button.dataset.direction=worksheetSortDirection;button.title=label;button.setAttribute('aria-label',label);
+  window.MelodyWorksheetList.direction(button,worksheetSortDirection);
   renderList();
 }
 function sortedWorksheets(items=sheets){return window.MelodyWorksheetList.sort(items,worksheetSortKey,worksheetSortDirection);}
-const pdfDownloads=new Set(),pdfRebuilds=new Set(),pdfOperationStarted=new Map();
+const pdfRebuilds=new Map();
 let worksheetListSerial=0;
 async function loadWorksheets(){
   const serial=++worksheetListSerial,epoch=currentErrorEpoch();clearError('worksheetListError');
@@ -561,12 +466,6 @@ function renderList(){
     box.appendChild(row);
   });
 }
-function cancelDelete(){renderList();}
-async function doDelete(key){
-  const [day,version]=key.split('-').map(Number);
-  const target=sheets.find(sheet=>sheet.day===day&&sheet.version===version);
-  if(target)return openWorksheetDeletion({...target,kind:'standard'});
-}
 async function deleteWorksheetRecord(item,mode){
   const meaning=isFeatureWorksheetKind(item.kind);
   const path=meaning?'/api/word-meaning/worksheets/'+encodeURIComponent(item.id):'/api/worksheet/'+item.day+'/'+item.version;
@@ -585,7 +484,7 @@ function openWorksheetDeletion(item){
 }
 
 /* ---------------- validated generation + durable retry ---------------- */
-let generationBusy=false,batch=null,generationTimer=null;
+let generationBusy=false,batch=null;
 window.addEventListener('beforeunload',e=>{if(generationBusy||questionRegenerationBusy||saveBusy||isEditorDirty()){e.preventDefault();e.returnValue='';}});
 function readInteger(id,min,max,label){
   const field=document.getElementById(id),value=C.integer(field.value,min,max);
@@ -596,7 +495,6 @@ function readInteger(id,min,max,label){
 function generationInput(kind){
   const bulk=kind===true,group=kind==='group';
   clearError();
-  if(vocabDeleteBusy){showApiError(Error('어휘 파일 삭제가 끝난 뒤 생성해 주세요.'),'generationError');return null;}
   const count=readInteger('count',1,20,'문항 수'),vocabId=document.getElementById('vocab').value;
   const file=vocabFiles.find(f=>f.id===vocabId);
   if(!file||daysLoading||!availableDays.length){fieldError('vocab','챕터 목록을 불러온 단어장을 선택해 주세요.');return null;}
@@ -637,9 +535,8 @@ function lockGeneration(busy){
     if(el.closest('.job-actions'))return;
     if(busy){el.dataset.wasDisabled=String(el.disabled);el.disabled=true;}else{el.disabled=el.dataset.wasDisabled==='true';delete el.dataset.wasDisabled;}
   });
-  document.querySelectorAll('[data-vocab-delete]').forEach(button=>button.disabled=busy||vocabDeleteBusy);
   syncLegacyGenerationAvailability();
-  closeReasoningMenu();renderJobs();
+  renderJobs();
 }
 function statusLine(message){document.getElementById('generationStatus').textContent=message;}
 function updateBatchStatus(){
@@ -678,9 +575,11 @@ async function runBatch(state){
     for(const task of batch.tasks.filter(t=>t.state===state)){
       if(batch.cancelRequested||task.state!==state)break;
       task.state='running';task.error='';persistBatch();renderJobs();
-      const began=Date.now(),name='스크립트 출제';
-      const tick=()=>statusLine((task.scope_label||scopeLabel(task.day,task.day_end??task.day))+' · '+name+' · 생성 및 저장 처리 중 · '+Math.floor((Date.now()-began)/1000)+'초 경과. '+(batch.cancelRequested?'남은 작업은 취소했습니다. 현재 결과를 저장할 때까지 창을 열어두세요.':'완료될 때까지 창을 열어두세요.'));
-      tick();generationTimer=setInterval(tick,1000);
+      const stopElapsed=beginTaskElapsed(seconds=>{
+        const scope=task.scope_label||scopeLabel(task.day,task.day_end??task.day);
+        const notice=batch.cancelRequested?'남은 작업은 취소했습니다. 현재 결과를 저장할 때까지 창을 열어두세요.':'완료될 때까지 창을 열어두세요.';
+        statusLine(scope+' · 스크립트 출제 · 생성 및 저장 처리 중 · '+seconds+'초 경과. '+notice);
+      });
       try{
         task.result=C.result(await apiSend('/api/generate','POST',{...batch.params,...(batch.params.bank_id?{unit_ids:task.unit_ids}:{day:task.day,...(task.day_end?{day_end:task.day_end}:{})}),request_id:task.request_id}));task.state='done';
       }catch(e){
@@ -691,7 +590,7 @@ async function runBatch(state){
           if(!task.error.includes(message))task.error=[task.error,message].filter(Boolean).join(' · ');
           throw e;
         }
-      }finally{clearInterval(generationTimer);persistBatch();renderJobs();}
+      }finally{stopElapsed();persistBatch();renderJobs();}
     }
     statusLine(batch.cancelRequested?'현재 작업을 마쳤습니다. 나머지 작업은 취소됐으며 저장된 시험지는 유지됩니다.':'선택한 작업의 생성·저장을 마쳤습니다.');
     toast(batch.cancelRequested?'남은 작업 취소 완료':'저장 완료','시험지 목록에서 저장된 PDF와 문항을 확인하세요.','ok');
@@ -700,7 +599,7 @@ async function runBatch(state){
     const message=C.safeMessage(e.message);
     if(!batch.tasks.some(task=>task.error&&task.error.includes(message)))showApiError(e,'generationError',epoch);
   }
-  finally{await loadWorksheets();lockGeneration(false);renderJobs();refreshGptUsage(true);}
+  finally{await loadWorksheets();lockGeneration(false);renderJobs();}
 }
 async function checkJobs(){
   if(generationBusy||!batch)return;clearError();const epoch=currentErrorEpoch();lockGeneration(true);
@@ -737,13 +636,8 @@ try{
 /* ---------------- 문항 렌더링 (편집 화면 실시간 미리보기) ---------------- */
 const CIR=['','①','②','③','④','⑤','⑥','⑦','⑧','⑨','⑩'];
 let questions=[];
-const TYPE_LABEL={
-  word_meaning:'단어뜻',pair_ko:'단어-뜻',blank_ko:'빈칸(국문)',def_match:'영영풀이',
-  common_blank:'공통빈칸',sentence_match:'문장-해석',count_correct:'개수세기',passage_blank:'지문빈칸',
-};
-
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-function instHTML(s){return esc(s).replace(/&lt;u&gt;/g,'<u>').replace(/&lt;\/u&gt;/g,'</u>');}
+function instHTML(s){return esc(s).replace(/&lt;u&gt;(.*?)&lt;\/u&gt;/gs,'<u>$1</u>');}
 function underlineWord(sentence,word){
   if(!word) return esc(sentence);
   const escaped=String(word).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
@@ -802,30 +696,6 @@ function renderMini(){
     '<div class="mini-rule" style="margin-top:10px"></div>'+answerKeyHTML()+
     '</div>';
 }
-const miniStyle=document.createElement('style');
-miniStyle.textContent=`
-.paper-mini{background:#fff;color:#111;border-radius:4px;box-shadow:0 6px 22px rgba(0,0,0,.18);padding:14px 13px 18px;font-size:11px;line-height:1.5}
-.mini-cols{columns:2;column-gap:8mm;column-fill:balance;margin-top:10px}
-.mini-qb{break-inside:avoid;margin-bottom:11px;text-align:justify}
-.mini-qh{display:flex;gap:5px;margin-bottom:3px}
-.mini-qh .no{font-weight:700}
-.mini-cir{margin-right:2px}
-.mini-rule{border-top:1px solid #111;margin:4px 0}
-.mini-ex{padding:1px 0;white-space:pre-wrap}
-.mini-qh>span:last-child{white-space:pre-wrap}
-.mini-choices{display:flex;flex-wrap:wrap;gap:3px 12px;margin-top:3px}
-.mini-pairs .p{display:grid;grid-template-columns:15px 84px 12px 1fr;align-items:baseline;padding:1px 0}
-.mini-defg{display:grid;grid-template-columns:auto auto auto 1fr;column-gap:4px;row-gap:3px;align-items:baseline}
-.mini-defg .colon{text-align:center;padding:0 5px}
-.mini-ans-head{font-weight:500}
-.mini-ans-two{display:flex;align-items:flex-start}
-.mini-ans-l{width:44%;padding-right:3mm}
-.mini-ans-r{width:56%;padding-left:3mm}
-.mini-ans-line{margin-bottom:6px}
-.mini-ans-exp{display:flex;gap:5px;margin-bottom:6px}
-.mini-ans-exp .an{font-weight:700}
-`;
-document.head.appendChild(miniStyle);
 
 /* ---------------- edit panel (editor screen) ---------------- */
 function renderEdit(focusIndex){
@@ -1036,36 +906,23 @@ function openPreviewFromEditor(){if(editorDocument&&!editorLoading)return openPr
 function openEditorFromPreview(){if(previewTarget)return openEditor(previewTarget.day,previewTarget.version);}
 
 /* PDF actions capture their target before any asynchronous work. */
-function pdfPendingLabel(kind,key,label){
-  const started=pdfOperationStarted.get(kind+':'+key);
-  return started===undefined?label:label+' · '+Math.max(0,Math.floor((Date.now()-started)/1000))+'초 경과';
-}
-function startPdfElapsed(kind,key){
-  pdfOperationStarted.set(kind+':'+key,Date.now());
-  const stop=beginTaskElapsed(syncPreviewActions,()=>kind==='download'?pdfDownloads.has(key):pdfRebuilds.has(key));
-  return()=>{stop();pdfOperationStarted.delete(kind+':'+key);};
-}
 function syncPreviewActions(){
   document.querySelectorAll('[data-pdf-key]').forEach(button=>{
     const key=button.dataset.pdfKey,entry=sheets.find(s=>s.day+'-'+s.version===key);
-    button.disabled=!!entry?.deletion_pending||!entry?.file_id||pdfDownloads.has(key)||pdfRebuilds.has(key);
+    button.disabled=!!entry?.deletion_pending||!entry?.file_id||pdfRebuilds.has(key);
     setActionLabel(button,'download',({student:'문제지',answer:'정답지',combined:'전체'})[button.dataset.pdfKind]||'PDF 다운로드');
   });
   const target=previewTarget,key=target?target.day+'-'+target.version:'';
   const entry=target&&sheets.find(s=>s.day===target.day&&s.version===target.version);
-  const rebuilding=pdfRebuilds.has(key),downloading=pdfDownloads.has(key);
+  const rebuilding=pdfRebuilds.has(key);
   const download=document.getElementById('pvDownload'),rebuild=document.getElementById('pvRebuild');
-  download.disabled=!entry?.file_id||rebuilding||downloading;
-  setActionLabel(download,'download',downloading?pdfPendingLabel('download',key,'PDF 저장 중'):'PDF 다운로드');
-  rebuild.disabled=!target||rebuilding||downloading;
-  setActionLabel(rebuild,'refresh',rebuilding?pdfPendingLabel('rebuild',key,'PDF 재생성 중'):'PDF 재생성');
+  download.disabled=!entry?.file_id||rebuilding;
+  setActionLabel(download,'download','PDF 다운로드');
+  rebuild.disabled=!target||rebuilding;
+  setActionLabel(rebuild,'refresh',rebuilding?'PDF 재생성 중 · '+pdfRebuilds.get(key)+'초 경과':'PDF 재생성');
 }
 function downloadPdfFromPreview(){if(previewTarget)return downloadPdf(previewTarget.day,previewTarget.version,document.getElementById('pvDownload'));}
 function rebuildPdfFromPreview(){if(previewTarget)return rebuildPdf(previewTarget.day,previewTarget.version);}
-function pdfDownloadName(entry){
-  const title=(entry.title||('DAY '+entry.day)).replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').trim().replace(/[. ]+$/,'').slice(0,150);
-  return (title||'시험지')+(entry.version===1?'':' (v'+entry.version+')')+'.pdf';
-}
 async function downloadPdf(day,version,button,pdfKind='combined'){
   const key=day+'-'+version,entry=sheets.find(s=>s.day===day&&s.version===version);
   if(pdfRebuilds.has(key)||entry?.deletion_pending)return;
@@ -1143,8 +1000,7 @@ function requestQuestionRegeneration(index){
   if(!q.candidate_token){showApiError(Error('문항을 다시 열어 후보 정보를 불러와 주세요.'),'editorError');return;}
   const key=editorDocument.day+'/'+editorDocument.version+'/'+index;
   if(questionRequests[key]&&q.alternatives.some(v=>v.candidate_id===questionRequests[key].request_id)){delete questionRequests[key];persistQuestionRequests();}
-  questionRegenerationTarget={doc:editorDocument,index,key,token:editorSerial,provider,reasoning};
-  if(questionRequests[key])Object.assign(questionRegenerationTarget,{provider:questionRequests[key].provider,reasoning:questionRequests[key].reasoning||'high'});
+  questionRegenerationTarget={doc:editorDocument,index,key,token:editorSerial};
   syncQuestionModelOptions();
   document.getElementById('questionGenerateError').textContent='';
   const dialog=document.getElementById('questionGenerateDialog');if(window.MelodyUI)window.MelodyUI.openDialog(dialog);else dialog.showModal();
@@ -1173,16 +1029,13 @@ async function confirmQuestionRegeneration(){
   confirm.disabled=cancel.disabled=true;confirm.textContent='생성 중…';error.textContent='';
   document.getElementById('saveBtn').disabled=true;renderEdit(index);updateEditStatus();
   const progress=document.getElementById('questionGenerateProgress');
-  let timer=null;
+  progress.hidden=false;
+  const stopElapsed=beginTaskElapsed(seconds=>{
+    const text='생성 및 저장 처리 중 · '+seconds+'초 경과';
+    progress.textContent=text;
+    const status=document.getElementById('questionGenerationStatus');if(status)status.textContent=text;
+  },()=>questionRegenerationBusy&&doc===editorDocument&&target.token===editorSerial);
   try{
-    const began=Date.now();
-    const tick=()=>{
-      if(!questionRegenerationBusy||doc!==editorDocument||target.token!==editorSerial)return;
-      const text='생성 및 저장 처리 중 · '+Math.max(0,Math.floor((Date.now()-began)/1000))+'초 경과';
-      progress.textContent=text;
-      const status=document.getElementById('questionGenerationStatus');if(status)status.textContent=text;
-    };
-    progress.hidden=false;tick();timer=setInterval(tick,1000);
     const result=await apiSend('/api/worksheet/'+doc.day+'/'+doc.version+'/questions/'+index+'/regenerate','POST',request);
     if(doc!==editorDocument||target.token!==editorSerial||screenName!=='editor')return;
     if(result.day!==doc.day||result.version!==doc.version||result.question_index!==index||result.request_id!==request.request_id||typeof result.candidate_token!=='string'||!Array.isArray(result.alternatives)||result.alternatives.length>10||result.alternatives.length<2||!Number.isInteger(result.generated_index)||result.alternatives[result.generated_index]?.candidate_id!==request.request_id)throw Error('생성 결과를 확인할 수 없습니다. 같은 작업을 다시 확인해 주세요.');
@@ -1200,7 +1053,7 @@ async function confirmQuestionRegeneration(){
     if(['candidate_limit','candidate_conflict','source_missing','subscription','invalid_ai_result','validation'].includes(e.code)){delete questionRequests[key];persistQuestionRequests();}
     error.textContent=C.safeMessage(e.message,'문항 생성을 완료하지 못했습니다. 같은 작업을 다시 확인해 주세요.');
   }finally{
-    if(timer!==null)clearInterval(timer);
+    stopElapsed();
     progress.hidden=true;progress.textContent='';
     questionRegenerationBusy=false;confirm.disabled=cancel.disabled=false;confirm.textContent='생성';
     syncQuestionModelOptions();
@@ -1209,17 +1062,15 @@ async function confirmQuestionRegeneration(){
 }
 
 /* init */
-document.querySelectorAll('[data-reasoning]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.reasoning===reasoning)));
-setProvider('gpt');
 initDriveChip();
 loadVocabList();
 loadWorksheets();
 
 async function rebuildPdf(day,version){
   const key=day+'-'+version,serial=previewSerial;
-  if(pdfRebuilds.has(key)||pdfDownloads.has(key))return;
-  pdfRebuilds.add(key);syncPreviewActions();clearError();
-  const stopElapsed=startPdfElapsed('rebuild',key);
+  if(pdfRebuilds.has(key))return;
+  clearError();
+  const stopElapsed=beginTaskElapsed(seconds=>{pdfRebuilds.set(key,seconds);syncPreviewActions();});
   const epoch=currentErrorEpoch(),errorTarget=screenName==='preview'?'previewError':'worksheetListError';
   try{
     const result=await apiSend('/api/worksheet/'+day+'/'+version+'/render','POST',{});

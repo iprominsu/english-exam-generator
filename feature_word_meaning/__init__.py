@@ -1,4 +1,1 @@
-"""Reusable word-meaning feature; can be mounted in the operating FastAPI app."""
-
-SCHEMA_VERSION = 1
-
+"""운영 FastAPI 앱에 마운트할 수 있는 재사용 가능 단어–뜻 시험 기능 패키지."""

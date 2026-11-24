@@ -6,12 +6,9 @@
   const labels = {student: '문제지', answer: '정답지', combined: '전체'};
   const key = item => item.kind === 'standard' ? `standard:${item.day}:${item.version}` : `${item.kind}:${item.id}`;
   const icon = name => window.MelodyIcons.svg(name, {size: 20});
-  const safeDriveURL = value => {
-    try {const url = new URL(value);return url.protocol === 'https:' && !url.username && !url.password && ['drive.google.com', 'docs.google.com'].includes(url.hostname) ? url.href : null;} catch {return null;}
-  };
   function driveURL(item) {
     const drive = item?.drive || item?.drive_links || {}, links = drive.links || {};
-    return [item?.web_link, links.student, drive.student_pdf_url, links.sheet, links.bank, drive.sheet_url, drive.bank_sheet_url, item?.sheet_url, item?.drive_folder_url, drive.folder_url].map(safeDriveURL).find(Boolean) || null;
+    return [item?.web_link, links.student, drive.student_pdf_url, links.sheet, links.bank, drive.sheet_url, drive.bank_sheet_url, item?.sheet_url, item?.drive_folder_url, drive.folder_url].map(window.ExamContracts.driveURL).find(Boolean) || null;
   }
   async function responseError(response) {
     let data;try {data = await response.json();} catch {}

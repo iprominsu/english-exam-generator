@@ -4,8 +4,8 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from .deletion import _metadata, _owned_file, execute_drive_deletion
-from .drive_sync import DriveSyncError, FEATURE_TAG, SHEET_MIME, _hash
+from .deletion import _collect_state_file_ids, _list_files, _metadata, _owned_file, execute_drive_deletion
+from .drive_sync import DriveSyncError, FEATURE_TAG, SHEET_MIME
 from .storage import DriveJsonStore
 
 
@@ -20,16 +20,7 @@ def plan_bank_files(backend, bank, imports, shared):
         mime = 'application/pdf' if source.get('format') == 'pdf' else 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         kinds = {'original_source': mime, 'word_bank': SHEET_MIME}
         query = f"'{folders['vocab']}' in parents and appProperties has {{ key='feature' and value='{FEATURE_TAG}' }} and appProperties has {{ key='record_key' and value='{digest}' }}"
-        files, token = {}, None
-        while True:
-            args = {'q': query, 'fields': 'files(id,mimeType,parents,appProperties,capabilities(canDelete)),nextPageToken', 'pageSize': 1000}
-            if token:
-                args['pageToken'] = token
-            result = drive.files().list(**args).execute()
-            files.update({item['id']: item for item in result.get('files', [])})
-            token = result.get('nextPageToken')
-            if not token:
-                break
+        files = _list_files(drive, query, 'files(id,mimeType,parents,appProperties,capabilities(canDelete)),nextPageToken')
         explicit = [(bank.get('drive', {}).get('bank_sheet_id'), 'word_bank'),
                     (bank.get('drive', {}).get('original_id'), 'original_source'),
                     (source.get('original_id'), 'original_source')]
@@ -38,23 +29,16 @@ def plan_bank_files(backend, bank, imports, shared):
             if file_id:
                 item = files.get(file_id) or _metadata(drive, file_id)
                 if item:
-                    _owned_file(item, folders['vocab'], kind, digest, kinds[kind])
+                    _owned_file(item, folders['vocab'], kind, digest, kinds[kind], label='단어장')
                     files[file_id] = item
         for item in files.values():
             kind = item.get('appProperties', {}).get('kind')
             if kind not in kinds:
                 raise DriveSyncError('단어장 소유 파일을 확인할 수 없습니다.')
-            _owned_file(item, folders['vocab'], kind, digest, kinds[kind])
+            _owned_file(item, folders['vocab'], kind, digest, kinds[kind], label='단어장')
             ordered.append(item['id'])
-    # The bank state is last so failures remain retryable with the original version.
-    for kind, records in [('jobs', imports), ('banks', [bank])]:
-        for record in records:
-            _, _, files = backend._find(kind, record['id'])
-            for item in files:
-                metadata = _metadata(drive, item['id'])
-                if metadata:
-                    _owned_file(metadata, folders['states'], 'state_' + kind, _hash(record['id']), 'application/json')
-                    ordered.append(metadata['id'])
+    # 실패 시 원래 버전으로 재시도할 수 있도록 단어장 상태 파일은 가장 마지막에 삭제한다.
+    ordered.extend(_collect_state_file_ids(backend, drive, folders['states'], [('jobs', imports), ('banks', [bank])], label='단어장'))
     return list(dict.fromkeys(ordered))
 
 

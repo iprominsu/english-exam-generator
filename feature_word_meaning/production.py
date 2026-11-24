@@ -467,52 +467,30 @@ class ProductionFeatureService(FeatureService):
     def import_existing(self, file_id):
         self.assert_new_import_allowed()
         payload = self.backend.import_existing(file_id, self.store.root)
-        with self.lock:
-            result = self.register_upload(payload["filename"], (self.store.root / "uploads" / payload["stored_name"]).read_bytes())
-            if result.get("job_id"):
-                job = self.get("jobs", result["job_id"])
-                job["payload"].setdefault("legacy_original_ids", [])
-                if file_id not in job["payload"]["legacy_original_ids"]:
-                    job["payload"]["legacy_original_ids"].append(file_id)
-                    self.store.put("jobs", job, expected_version=job["version"])
-            elif result.get("bank_id"):
-                bank = self.get("banks", result["bank_id"])
-                bank["source"].setdefault("legacy_original_ids", [])
-                if file_id not in bank["source"]["legacy_original_ids"]:
-                    bank["source"]["legacy_original_ids"].append(file_id)
-                    self.store.put("banks", bank, expected_version=bank["version"])
-            return result
-
-    def _import(self, job):
-        super()._import(job)
-        legacy_ids = job.get("payload", {}).get("legacy_original_ids", [])
-        if legacy_ids:
-            with self.lock:
-                result = self.get("jobs", job["id"])
-                bank = self.get("banks", result["result_id"])
-                bank["source"]["legacy_original_ids"] = list(dict.fromkeys(bank["source"].get("legacy_original_ids", []) + legacy_ids))
-                self.store.put("banks", bank, expected_version=bank["version"])
+        content = (self.store.root / "uploads" / payload["stored_name"]).read_bytes()
+        return self.register_upload(payload["filename"], content, legacy_original_id=file_id)
 
     def queue_regeneration(self, worksheet_id, question_id, version, model_options, request_id=None):
-        payload = {"worksheet_id": worksheet_id, "question_id": question_id, "version": version, "model_options": {}}
-        existing, job_id = self.find_intent("regenerate", request_id, payload)
-        if existing:
-            return {"job_id": existing["id"]}
-        worksheet = self.get("worksheets", worksheet_id)
-        if worksheet["version"] != version:
-            raise HTTPException(409, "최신 내용을 다시 열어 주세요.")
-        question = next((q for q in worksheet["questions"] if q["id"] == question_id), None)
-        if not question:
-            raise HTTPException(404, "문항을 찾을 수 없습니다.")
-        if len(question.get("candidates", [])) >= 10:
-            raise HTTPException(422, "더 이상 생성할 수 없습니다.")
-        word = deepcopy(question.get("source_snapshot"))
-        if not word:
-            raise HTTPException(422, "재생성 원본이 없습니다.")
-        word.update(source_word=question.get("source_word", word["word"]), word=question["word"])
-        bank = self.worksheet_bank(worksheet)
-        job = self.store.put("jobs", {"id": job_id, "kind": "regenerate", "generation_mode": "script", "status": "queued", "request_id": request_id, "request_payload": payload, "payload": payload, "selected_words": [word], "worksheet_snapshot": worksheet, "bank_snapshot": bank, "seed": int(uuid.uuid4().hex[:12], 16), "completed_batches": {}, "message": "스크립트 문항 재생성 대기"})
-        return {"job_id": job["id"]}
+        with self.lock:
+            payload = {"worksheet_id": worksheet_id, "question_id": question_id, "version": version, "model_options": {}}
+            existing, job_id = self.find_intent("regenerate", request_id, payload)
+            if existing:
+                return {"job_id": existing["id"]}
+            worksheet = self.get("worksheets", worksheet_id)
+            if worksheet["version"] != version:
+                raise HTTPException(409, "최신 내용을 다시 열어 주세요.")
+            question = next((q for q in worksheet["questions"] if q["id"] == question_id), None)
+            if not question:
+                raise HTTPException(404, "문항을 찾을 수 없습니다.")
+            if len(question.get("candidates", [])) >= 10:
+                raise HTTPException(422, "더 이상 생성할 수 없습니다.")
+            word = deepcopy(question.get("source_snapshot"))
+            if not word:
+                raise HTTPException(422, "재생성 원본이 없습니다.")
+            word.update(source_word=question.get("source_word", word["word"]), word=question["word"])
+            bank = self.worksheet_bank(worksheet)
+            job = self.store.put("jobs", {"id": job_id, "kind": "regenerate", "generation_mode": "script", "status": "queued", "request_id": request_id, "request_payload": payload, "payload": payload, "selected_words": [word], "worksheet_snapshot": worksheet, "bank_snapshot": bank, "seed": int(uuid.uuid4().hex[:12], 16), "completed_batches": {}, "message": "스크립트 문항 재생성 대기"})
+            return {"job_id": job["id"]}
 
     def retry_job(self, job_id):
         job = self.get("jobs", job_id)
@@ -543,7 +521,9 @@ class ProductionFeatureService(FeatureService):
                 return self.update_job(job["id"], status="complete", result_id=worksheet["id"], pending_batch=None, in_flight=None, phase_response=None, message="스크립트 시험지 생성 완료 · 검수 필요")
             if worksheet["version"] != payload["version"]:
                 raise ConflictError("재생성 중 시험지가 수정되었습니다. 생성 결과는 작업 기록에 보존됩니다.")
-            current = next(q for q in worksheet["questions"] if q["id"] == payload["question_id"])
+            current = next((q for q in worksheet["questions"] if q["id"] == payload["question_id"]), None)
+            if current is None:
+                raise ConflictError("재생성할 문항이 변경되었습니다. 생성 결과는 작업 기록에 보존됩니다.")
             candidate = questions[0]
             candidate["source_snapshot"] = deepcopy(current.get("source_snapshot"))
             candidate["source_unit_labels"] = current.get("source_unit_labels", [])

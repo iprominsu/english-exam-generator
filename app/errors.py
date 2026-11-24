@@ -2,9 +2,6 @@
 import logging
 import re
 
-from fastapi import HTTPException
-
-
 _logger = logging.getLogger(__name__)
 
 
@@ -51,10 +48,27 @@ def _log_unexpected(error):
 
 
 def public_error(error):
+    from fastapi import HTTPException
+    from feature_word_meaning.drive_sync import DriveSyncError
+
     if isinstance(error, HTTPException):
         return error
     if isinstance(error, AppError):
         return HTTPException(error.status, error.detail)
+    # DriveSyncError는 ValueError의 하위 클래스이므로 일반 500/422 판정보다 먼저 처리한다.
+    if isinstance(error, DriveSyncError):
+        code = error.code
+        if code in {"account_mismatch", "ambiguous_destination", "ambiguous_target",
+                    "ambiguous_record", "original_changed", "source_mismatch"}:
+            status = 409
+        elif code in {"invalid_data", "invalid_source", "invalid_destination", "invalid_existing_file",
+                      "missing_source", "missing_pdf", "pdf_mismatch", "missing_bank_sheet",
+                      "publication_mismatch", "cell_limit", "sheet_limit"}:
+            status = 422
+        else:
+            status = 503
+        retryable = status == 503 and code not in {"account_unverified", "missing_dependency"}
+        return HTTPException(status, dict(code=code, retryable=retryable, message=str(error)))
     status = status_of(error)
     if status in (429, 500, 502, 503, 504):
         return HTTPException(503, dict(code="temporary", retryable=True,

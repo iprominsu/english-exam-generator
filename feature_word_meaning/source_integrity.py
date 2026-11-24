@@ -146,6 +146,10 @@ def merge_manual_edits(incoming, previous):
     if not previous:
         return output
     output["title"] = previous.get("title", output.get("title"))
+    previous_ids = previous.get("source", {}).get("legacy_original_ids", [])
+    if previous_ids:
+        source = output.setdefault("source", {})
+        source["legacy_original_ids"] = list(dict.fromkeys(previous_ids + source.get("legacy_original_ids", [])))
     for key in ("deleted_at", "title_manual_edit", "drive", "drive_state_id"):
         if key in previous:
             output[key] = deepcopy(previous[key])

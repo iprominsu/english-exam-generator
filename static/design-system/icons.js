@@ -7,9 +7,9 @@
   const names = Object.freeze([
     'overview', 'vocabulary', 'worksheet-create', 'worksheet-manage',
     'search', 'upload', 'download', 'preview', 'edit', 'trash', 'save', 'refresh',
-    'chevron-down', 'chevron-right', 'chevron-left', 'arrow-left', 'arrow-right',
-    'external-link', 'check', 'warning', 'close', 'clock', 'folder', 'google-drive',
-    'sort-asc', 'sort-desc', 'sparkles', 'user', 'appearance', 'message', 'file'
+    'chevron-right', 'arrow-left',
+    'check', 'warning', 'close', 'folder', 'google-drive',
+    'sort-asc', 'sort-desc', 'sparkles', 'user', 'message', 'file'
   ]);
   const registry = new Set(names);
   const sizes = new Set([16, 20, 24]);
