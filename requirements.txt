@@ -1,0 +1,36 @@
+fastapi==0.136.1
+starlette==1.8.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.32
+pydantic==2.9.2
+pydantic-core==2.23.4
+typing-inspection==0.4.2
+annotated-doc==0.0.2
+python-dotenv==1.2.2
+
+pandas==2.2.3
+openpyxl==3.1.5
+
+gspread==6.1.2
+gspread-dataframe==3.3.1
+google-auth==2.34.0
+google-api-python-client==2.144.0
+
+playwright==1.62.0
+
+google-genai==0.8.0
+
+# Position-aware vocabulary imports and saved word/meaning worksheet PDFs.
+pdfplumber==0.11.9
+pypdfium2==5.14.0
+pypdf==6.21.1
+reportlab==4.4.9
+Pillow==13.0.0
+
+# Audited security floors, pinned to keep rebuilt images reproducible.
+certifi==2026.10.19
+urllib3==2.8.0
+oauthlib==4.0.0
+opentelemetry-api==1.45.1
+setuptools==83.0.0
+pip==26.2

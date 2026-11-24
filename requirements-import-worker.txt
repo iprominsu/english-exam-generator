@@ -1,0 +1,5 @@
+# The worker is a separate, explicitly enabled deployment. The web release
+# remains compatible with its current locked runtime until auth is approved.
+-r requirements.txt
+google-cloud-firestore==2.34.1
+google-cloud-tasks==2.26.0

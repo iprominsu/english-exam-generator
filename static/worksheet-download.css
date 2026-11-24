@@ -1,0 +1,13 @@
+.worksheet-download-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--me-space-3); }
+.worksheet-download-head h2 { padding-top: 3px; }
+.worksheet-download-head .me-icon-button { flex: none; }
+.worksheet-download-target { margin: 0 0 var(--me-space-6); overflow-wrap: anywhere; }
+.worksheet-download-folder { display: flex; align-items: center; gap: var(--me-space-2); }
+.worksheet-download-folder .me-input { flex: 1; min-width: 0; width: 100%; }
+.worksheet-download-folder .me-icon-button { flex: none; }
+.worksheet-download-dialog .worksheet-download-archive { margin-top: var(--me-space-4); }
+.worksheet-download-dialog .worksheet-download-progress { margin-top: var(--me-space-4); }
+.worksheet-download-dialog .worksheet-download-error { overflow-wrap: anywhere; color: var(--me-danger); }
+.worksheet-download-dialog .me-dialog-actions { flex-wrap: nowrap; }
+.worksheet-download-dialog .me-dialog-actions .me-button { flex: 1; }
+#managementDownloadSelected:disabled, #managementDeleteSelected:disabled { opacity: 1; }

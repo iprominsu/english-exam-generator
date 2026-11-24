@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/static/brand/favicon.ico">
+<title>부스터보카 시험지 생성기</title>
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/design-system/tokens.css">
+<link rel="stylesheet" href="/static/design-system/base.css">
+<link rel="stylesheet" href="/static/design-system/components.css">
+
+</head><body class="me-ui">
+<!-- ================= SHELL (topbar + sidebar + content) ================= -->
+<div id="shell" data-workspace-view="overview">
+  <header class="topbar">
+    <button type="button" class="wordmark" onclick="go('overview')" aria-label="Melody English 전체 보기로 이동" title="전체 보기로 이동"><img class="brand-logo" src="/static/brand/logo.svg" alt="">Melody<span class="dot">·</span>English</button>
+    <span class="sp"></span>
+    <div class="acct">
+      <span class="pill-chip me-badge" data-tone="edit"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-user"></use></svg> 관리자</span>
+    </div>
+  </header>
+
+  <div class="body-row">
+    <aside class="sidebar">
+      <nav aria-label="주 메뉴">
+        <button type="button" class="side-item active me-nav-item" data-screen="overview" aria-current="page" onclick="go('overview')"><span class="nav-icon" aria-hidden="true"><svg class="me-icon" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-overview"></use></svg></span>전체 보기</button>
+        <div class="side-group">학습 자료</div>
+        <button type="button" class="side-item me-nav-item" data-screen="vocabulary" onclick="go('vocabulary')"><span class="nav-icon" aria-hidden="true"><svg class="me-icon" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-vocabulary"></use></svg></span>단어장</button>
+        <button type="button" class="side-item me-nav-item" data-screen="dashboard" onclick="go('dashboard')"><span class="nav-icon" aria-hidden="true"><svg class="me-icon" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-worksheet-create"></use></svg></span>시험지 만들기</button>
+        <button type="button" class="side-item me-nav-item" data-screen="management" onclick="go('management')"><span class="nav-icon" aria-hidden="true"><svg class="me-icon" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-worksheet-manage"></use></svg></span>시험지 관리</button>
+      </nav>
+    </aside>
+
+    <main class="content">
+<div id="appError" class="error-panel me-alert" role="alert" hidden data-tone="danger"></div>
+
+      <!-- ================= OVERVIEW ================= -->
+      <section class="screen" id="screen-overview">
+        <div class="page-head">
+          <div><h1>전체 보기</h1><p class="sub">단어장 관리부터 시험지 만들기와 만들어진 시험지까지 한눈에 확인하세요.</p></div>
+          <span class="sp"></span>
+        </div>
+      </section>
+
+      <!-- ================= VOCABULARY ================= -->
+      <section class="screen" id="screen-vocabulary">
+        <div class="page-head">
+          <div><h1>단어장</h1><p class="sub">어휘 파일을 등록하고, 단어장과 챕터별로 단어를 살펴보세요.</p></div>
+          <span class="sp"></span>
+        </div>
+        <!-- 1. 어휘 파일 -->
+        <div class="section me-panel" id="vocabularyUploadSection">
+          <div class="section-head me-section-head"><h2>단어장 등록</h2>
+            <span class="sub me-help">단어와 뜻을 먼저 등록합니다. 기존 어휘 시험용 학습자료는 백그라운드에서 준비합니다.</span></div>
+          <div class="section-body me-section-body">
+            <div class="uploader me-upload">
+              <span class="ic" aria-hidden="true"><svg class="me-icon" data-size="24" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-file"></use></svg></span>
+              <div class="upload-copy">
+                <div class="upload-title">어휘 파일 업로드</div>
+                <div class="upload-description me-help">PDF · Excel(.xlsx) 파일을 선택해 주세요.</div>
+              </div>
+              <button class="btn outline me-button" onclick="document.getElementById('xlsx').click()" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-file"></use></svg> 파일 선택</button>
+              <input type="file" id="xlsx" accept=".xlsx,.pdf" hidden onchange="previewVocabularyUpload(this)">
+            </div>
+            <div class="upload-next"><p id="vocabularyUploadStatus" role="status">PDF 또는 Excel을 선택한 뒤 단어장을 생성하세요. 원본 파일과 단어장은 구글 드라이브에 저장됩니다.</p><button type="button" id="vocabularyUploadButton" class="btn cta-soft me-button" onclick="uploadVocabularyBank()" disabled data-variant="soft" data-size="md">단어장 생성</button></div>
+            <div id="vocabularyFilesError" class="local-error me-alert" role="alert" data-tone="danger" hidden></div>
+          </div>
+        </div>
+        <div class="section me-panel" id="vocabularyManageSection">
+          <div class="section-head me-section-head"><h2>단어장 관리</h2><span class="sub me-help">단어장을 선택한 뒤 챕터를 골라 주세요.</span><span class="sp"></span><button type="button" id="vocabularyRefreshButton" class="btn sm outline me-button" onclick="loadVocabularyBanks(undefined,true)" data-variant="secondary" data-size="sm">새로고침</button></div>
+          <div class="section-body me-section-body">
+            <div class="book-select-row"><div class="book-select-field me-field"><label for="vocabularyBook">단어장 선택</label><select class="input me-input" id="vocabularyBook" onchange="selectVocabularyBook(this.value)"><option value="" selected>단어장을 불러오는 중…</option></select></div><button type="button" id="vocabularyRenameButton" class="btn outline me-button" onclick="openVocabularyBankEditor()" data-variant="edit" data-size="md" disabled>수정</button><button type="button" id="vocabularyDeleteButton" class="btn danger-ghost me-button" onclick="openVocabularyBankDeletion()" data-variant="danger" data-size="md" disabled>삭제</button></div>
+            <p id="vocabularyBankError" class="me-alert" role="alert" data-tone="danger" hidden></p>
+            <div class="lesson-heading"><span>챕터 목록</span><span id="vocabularyLessonCount"></span></div>
+            <div class="lesson-list" id="vocabularyLessons" role="group" aria-label="단어장 챕터 선택"></div>
+            <p class="hint me-help" id="vocabularyLessonPlaceholder">단어장을 선택하면 챕터 목록이 나타납니다.</p>
+          </div>
+        </div>
+        <div class="section me-panel" id="vocabularyListSection" hidden>
+          <div class="section-head vocabulary-list-head me-section-head"><h2>단어장 리스트</h2><span class="sub me-help" id="vocabularyScope" aria-live="polite"></span><span class="sp"></span><button type="button" class="btn sm outline me-button" onclick="openSelectedVocabulary()" data-variant="secondary" data-size="sm">출제 화면에서 열기</button></div>
+          <div class="table-scroll me-table-scroll" tabindex="0" role="region" aria-label="선택한 챕터의 어휘 표"><table class="workspace-table me-table" id="vocabularyTable"><caption class="sr-only" id="vocabularyCaption"></caption><thead id="vocabularyTableHead"></thead><tbody id="vocabularyTableBody"></tbody></table></div>
+          <div class="table-foot"><span id="vocabularyWordCount" aria-live="polite"></span><span>단어장에 따라 어휘 표의 항목이 달라집니다.</span></div>
+        </div>
+        <p class="prototype-note">연번·단어·뜻과 함께 원본에 있는 유의어·반의어를 표시합니다. 확인이 필요한 어휘는 수정에서 원본을 보고 고치거나 등록할 수 있습니다.</p>
+      </section>
+
+      <!-- ================= WORKSHEET MANAGEMENT ================= -->
+      <section class="screen" id="screen-management" hidden>
+        <div class="page-head"><div><h1>시험지 관리</h1><p class="sub">만들어진 시험지를 모아 보고, 미리보기와 수정을 이어가세요.</p></div><span class="sp"></span></div>
+        <div class="section me-panel">
+          <div class="section-head me-section-head"><h2>시험지 목록</h2><span class="sub me-help">저장된 시험지를 조회하고 관리합니다</span><span class="sp"></span><button type="button" class="btn cta-soft me-button" onclick="go('dashboard')" data-variant="soft" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-worksheet-create"></use></svg> 시험지 만들기</button></div>
+          <div class="management-toolbar"><label class="search-field"><span class="sr-only">시험지 검색</span><span aria-hidden="true"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-search"></use></svg></span><input type="search" class="input me-input" id="managementSearch" placeholder="시험지 이름 검색" oninput="renderManagementExamples()"></label><label><span class="sr-only">시험지 유형</span><select class="input me-input" id="managementKind" onchange="renderManagementExamples()"><option value="all">모든 유형</option><option value="standard">기존 어휘 시험</option><option value="word-meaning">단어–뜻 시험</option><option value="meaning-writing">뜻 쓰기 시험</option></select></label><div class="worksheet-sort"><select id="managementSort" class="input me-input" aria-label="관리 목록 정렬 기준" onchange="setManagementSort(this.value)"><option value="latest">최신순</option><option value="created" selected>생성순</option><option value="name">이름순</option></select><button type="button" id="managementSortDirection" class="btn outline sort-direction me-button" data-direction="desc" aria-label="내림차순 · 오름차순으로 변경" title="내림차순 · 오름차순으로 변경" onclick="toggleManagementSortDirection()" data-variant="secondary" data-size="md">
+                <svg class="me-icon sort-desc" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sort-desc"></use></svg>
+                <svg class="me-icon sort-asc" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sort-asc"></use></svg>
+              </button></div><button type="button" id="managementDownloadSelected" class="btn outline me-button" data-variant="secondary" onclick="downloadSelectedManaged()" disabled>다운로드</button><button type="button" id="managementDeleteSelected" class="btn danger-ghost me-button" data-variant="danger" onclick="deleteSelectedManaged()" disabled>삭제</button></div>
+          <div id="managementLoading" class="management-toolbar me-help" role="status" aria-live="polite" hidden><span class="me-spinner" aria-hidden="true"></span><span id="managementLoadingText"></span></div>
+          <p id="managementFeedback" class="me-help" data-tone="danger" role="alert" hidden></p>
+          <div class="table-scroll me-table-scroll" tabindex="0" role="region" aria-label="시험지 목록"><table class="workspace-table management-table me-table"><caption class="sr-only">저장된 시험지</caption><colgroup><col class="management-col-check"><col class="management-col-number"><col class="management-col-title"><col class="management-col-range"><col class="management-col-count"><col class="management-col-date"><col class="management-col-actions"></colgroup><thead><tr><th scope="col"><input type="checkbox" id="managementSelectAll" aria-label="표시된 시험지 전체 선택" onchange="selectAllManaged(this.checked)"></th><th scope="col">번호</th><th scope="col">시험지</th><th scope="col">출제 범위</th><th scope="col">문항 수</th><th scope="col">생성·수정</th><th scope="col">관리</th></tr></thead><tbody id="managementExamples"></tbody></table></div>
+          <div class="table-foot"><span id="managementCount" role="status"></span></div>
+        </div>
+      </section>
+
+      <!-- ================= EXISTING GENERATOR ================= -->
+      <section class="screen" id="screen-dashboard">
+        <div class="page-head">
+          <div><h1>시험지 만들기</h1><p class="sub">챕터별 문항 생성 · PDF 출력 · 구글 드라이브 저장</p></div>
+          <span class="sp"></span>
+          <div class="page-head-right">
+            <span class="drive-chip me-badge" id="driveChip" data-tone="neutral"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-folder"></use></svg> 드라이브 연동 확인 중…</span>
+            <button class="btn cta-soft me-button" onclick="openDrive()" data-variant="soft" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-folder"></use></svg> 구글 드라이브에서 열기</button>
+          </div>
+        </div>
+
+        <!-- 2. 시험지 만들기 -->
+        <div class="section generation-section me-panel" id="generationSection">
+          <div class="section-head me-section-head"><h2>시험지 만들기</h2>
+            <span class="sub me-help" id="generationDescription">등록한 단어장으로 문항을 생성하고 저장합니다</span></div>
+          <div class="section-body me-section-body">
+            <div class="worksheet-kind-field">
+              <label class="worksheet-kind-label">시험지 유형</label>
+              <div class="seg worksheet-kinds me-segmented" role="group" aria-label="시험지 유형 선택">
+                <button type="button" id="kind-standard" aria-pressed="true" aria-controls="standardGenerationPanel" onclick="setWorksheetKind('standard')">기존 어휘 시험</button>
+                <button type="button" id="kind-word-meaning" aria-pressed="false" aria-controls="wordMeaningPanel" onclick="openWordMeaning()">단어–뜻 시험</button>
+                <button type="button" id="kind-meaning-writing" aria-pressed="false" aria-controls="wordMeaningPanel" onclick="setWorksheetKind('meaning-writing')">뜻 쓰기 시험</button>
+              </div>
+              <p class="hint me-help" id="worksheetKindHelp">단어–뜻 시험은 영단어 아래 보기에서 맞는 뜻을 모두 고릅니다. Excel과 PDF 단어장을 사용할 수 있습니다.</p>
+            </div>
+            <div id="standardGenerationPanel">
+            <div class="row generation-options">
+              <div class="col generation-mode-field me-field">
+                <label>생성 방식</label>
+                <div class="seg generation-modes me-segmented" role="group" aria-label="생성 방식 선택">
+                  <button type="button" id="mode-single" aria-pressed="true" onclick="setMode('single')">단일 챕터</button>
+                  <button type="button" id="mode-group" aria-pressed="false" onclick="setMode('group')">범위 통합</button>
+                  <button type="button" id="mode-bulk" aria-pressed="false" onclick="setMode('bulk')">챕터별 다중 작업</button>
+                </div>
+              </div>
+              <div class="col me-field">
+                <label for="vocab">단어장 선택</label>
+                <select class="input me-input" id="vocab" aria-describedby="vocab-error">
+                  <option value="">불러오는 중…</option>
+                </select><span class="field-error me-help" id="vocab-error" aria-live="polite" data-tone="danger"></span>
+              </div>
+              <div class="col me-field"><label>출제 방식</label><p class="me-help">등록한 단어장과 챕터를 기준으로 스크립트가 문항을 생성합니다.</p></div>
+              <div class="col me-field">
+                <label for="count">시험지당 문항 수</label>
+                <input class="input me-input" id="count" type="number" value="10" min="1" max="20" step="1" required aria-describedby="count-error">
+                <span class="field-error me-help" id="count-error" aria-live="polite" data-tone="danger"></span>
+              </div>
+            </div>
+
+            <!-- 단일 Day 모드 -->
+            <div id="panel-single" class="row">
+              <div class="col me-field">
+                <label for="day">챕터</label>
+                <select class="input me-input" id="day" aria-describedby="day-error"></select><span class="field-error me-help" id="day-error" aria-live="polite" data-tone="danger"></span>
+              </div>
+              <div class="col me-field">
+                <label>&nbsp;</label>
+                <button class="btn cta me-button" id="genBtn" onclick="generate()" data-variant="primary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sparkles"></use></svg> 문항 생성</button>
+              </div>
+            </div>
+
+            <!-- 여러 Day의 어휘를 합친 시험지 한 부 -->
+            <div id="panel-group" class="row" style="display:none">
+              <div class="col me-field">
+                <label for="groupFrom">시작 챕터</label>
+                <select class="input me-input" id="groupFrom" aria-describedby="groupFrom-error"></select><span class="field-error me-help" id="groupFrom-error" aria-live="polite" data-tone="danger"></span>
+              </div>
+              <div class="col me-field">
+                <label for="groupTo">끝 챕터</label>
+                <select class="input me-input" id="groupTo" aria-describedby="groupTo-error"></select><span class="field-error me-help" id="groupTo-error" aria-live="polite" data-tone="danger"></span>
+              </div>
+              <div class="col me-field">
+                <label>&nbsp;</label>
+                <button class="btn cta me-button" id="genGroupBtn" onclick="generateGrouped()" data-variant="primary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sparkles"></use></svg> 묶음 시험지 생성</button>
+              </div>
+            </div>
+
+            <!-- 일괄 생성 모드 -->
+            <div id="panel-bulk" class="row" style="display:none">
+              <div class="col me-field">
+                <label for="dayFrom">시작 챕터</label>
+                <select class="input me-input" id="dayFrom" aria-describedby="dayFrom-error"></select><span class="field-error me-help" id="dayFrom-error" aria-live="polite" data-tone="danger"></span>
+              </div>
+              <div class="col me-field">
+                <label for="dayTo">끝 챕터</label>
+                <select class="input me-input" id="dayTo" aria-describedby="dayTo-error"></select><span class="field-error me-help" id="dayTo-error" aria-live="polite" data-tone="danger"></span>
+              </div>
+              <div class="col me-field">
+                <label for="reps">챕터당 부수</label>
+                <input class="input me-input" id="reps" type="number" value="1" min="1" max="5" step="1" required aria-describedby="reps-error">
+                <span class="field-error me-help" id="reps-error" aria-live="polite" data-tone="danger"></span>
+              </div>
+              <div class="col me-field">
+                <label>&nbsp;</label>
+                <button class="btn cta-soft me-button" id="genBulkBtn" onclick="generateBulk()" data-variant="soft" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sparkles"></use></svg> 일괄 생성</button>
+              </div>
+            </div>
+
+            <p class="generation-summary" id="generationSummary" role="status" aria-live="polite">단어장을 선택해 챕터를 불러오세요.</p>
+            <p class="hint me-help" id="modeHint">선택한 챕터의 어휘로 시험지 한 부를 만듭니다.</p>
+            <p class="hint me-help" id="genHint">단어장의 학습 자료를 사용해 문항을 자동 생성합니다.</p>
+            <p id="legacyCapabilitiesNotice" class="me-help" role="status"></p>
+            <label class="me-checkbox"><input type="checkbox" id="legacyAllowPartial"> 확인이 필요한 항목을 제외하고 출제</label>
+            <div id="generationStatus" role="status" aria-live="polite"></div>
+            <div id="generationError" class="local-error me-alert" role="alert" data-tone="danger" hidden></div>
+            <div id="jobPanel" hidden><ol id="jobList"></ol><div class="job-actions"><button class="btn sm outline me-button" id="retryFailed" data-variant="secondary" data-size="sm">실패한 항목만 재시도</button><button class="btn sm outline me-button" id="continuePending" data-variant="secondary" data-size="sm">남은 항목 이어하기</button><button class="btn sm outline me-button" id="checkJobs" data-variant="secondary" data-size="sm">작업 상태 확인</button><button class="btn sm outline me-button" id="cancelJobs" data-variant="secondary" data-size="sm">남은 작업 취소</button><button class="btn sm outline me-button" id="closeJobs" hidden data-variant="secondary" data-size="sm">완료 내역 닫기</button></div></div>
+            <div id="bulkProgress" class="bulk-progress" style="display:none">
+              <div id="bulkProgressMeter" class="bulk-progress-track me-progress" role="progressbar" aria-label="시험지 생성 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="bulkBar" class="bulk-progress-bar" style="width:0%"></div>
+              </div>
+              <p id="bulkText" class="me-help"></p>
+            </div>
+            </div>
+            <div id="wordMeaningPanel" hidden>
+              <p id="wordMeaningStatus" class="hint me-help" role="status" hidden></p>
+              <iframe id="wordMeaningFrame" class="feature-meaning-frame" title="단어–뜻 시험"></iframe>
+              <iframe id="meaningWritingFrame" class="feature-meaning-frame" title="뜻 쓰기 시험" hidden></iframe>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 만들어진 시험지 -->
+        <div class="section me-panel" id="standardWorksheetList">
+          <div class="section-head worksheet-list-head me-section-head"><h2>만들어진 시험지</h2>
+            <span class="sub me-help">미리보기·수정하거나 드라이브에서 바로 열 수 있습니다</span>
+            <div class="worksheet-sort" role="group" aria-label="시험지 정렬">
+              <select id="worksheetSort" class="input me-input" aria-label="시험지 정렬 기준" onchange="setWorksheetSort(this.value)">
+                <option value="latest">최신순</option><option value="created" selected>생성순</option><option value="name">이름순</option>
+              </select>
+              <button type="button" id="worksheetSortDirection" class="btn outline sort-direction me-button" data-direction="desc" aria-label="내림차순 · 오름차순으로 변경" title="내림차순 · 오름차순으로 변경" onclick="toggleWorksheetSortDirection()" data-variant="secondary" data-size="md">
+                <svg class="me-icon sort-desc" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sort-desc"></use></svg>
+                <svg class="me-icon sort-asc" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sort-asc"></use></svg>
+              </button>
+            </div>
+          </div>
+          <div class="section-body me-section-body worksheet-list-body">
+            <div id="worksheetListError" class="local-error me-alert" role="alert" data-tone="danger" hidden></div>
+            <div class="wslist" id="wslist"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= EDITOR (편집: 실시간 좌우 분할) ================= -->
+      <section class="screen" id="screen-editor" hidden>
+        <div class="page-head">
+          <div>
+            <button class="btn ghost me-button back-link" onclick="go('dashboard')" data-variant="ghost" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-arrow-left"></use></svg> 목록</button>
+            <h1 id="ed-title">부스터보카 수능 DAY 1</h1>
+            <p class="sub">문항 수정 <span id="editStatus" role="status">저장됨</span></p>
+          </div>
+          <span class="sp"></span>
+          <div class="page-head-right">
+            <button class="btn outline me-button" onclick="openPreviewFromEditor()" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-preview"></use></svg> 인쇄 미리보기</button>
+            <button class="btn cta-soft me-button" onclick="openDrive()" data-variant="soft" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-folder"></use></svg> 구글 드라이브에서 열기</button>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="pane me-panel">
+            <div class="pane-head me-section-head">간이 미리보기 · 인쇄 배치는 PDF에서 확인 <span class="live">실시간 반영</span></div>
+            <div class="mini-preview-scroll"><div id="miniPaper"></div></div>
+          </div>
+          <div class="pane me-panel">
+            <div class="pane-head me-section-head">문항 편집</div>
+            <div class="edit-scroll" id="editList"></div>
+          </div>
+        </div>
+
+        <div id="editorError" class="local-error me-alert" role="alert" data-tone="danger" hidden></div>
+        <div class="savebar">
+          <span class="info" id="editorSaveHint">저장하면 <b>구글 시트가 갱신</b>되고 <b>PDF가 드라이브에 다시 저장</b>됩니다.</span>
+          <span class="info" id="editorSaveProgress" role="status" hidden></span>
+          <span class="sp"></span>
+          <button class="btn outline me-button" onclick="go('dashboard')" data-variant="secondary" data-size="md">취소</button>
+          <button class="btn cta me-button" id="saveBtn" onclick="save()" data-variant="primary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-save"></use></svg> 저장</button>
+        </div>
+      </section>
+
+      <!-- ================= PRINT PREVIEW (정적, 읽기 전용) ================= -->
+      <section class="screen" id="screen-preview" hidden>
+        <div class="page-head">
+          <div>
+            <button class="btn ghost me-button back-link" onclick="go('dashboard')" data-variant="ghost" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-arrow-left"></use></svg> 목록</button>
+            <h1 id="pv-title">부스터보카 수능 DAY 1</h1>
+            <p class="sub">인쇄 미리보기 · 실제 PDF와 동일한 여백·분량</p>
+          </div>
+          <span class="sp"></span>
+          <div class="page-head-right">
+            <button class="btn outline me-button" onclick="openEditorFromPreview()" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-edit"></use></svg> 문항 수정</button>
+            <button class="btn outline me-button" id="pvRebuild" onclick="rebuildPdfFromPreview()" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-refresh"></use></svg> PDF 재생성</button>
+            <button class="btn me-button" id="pvDownload" onclick="downloadPdfFromPreview()" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-download"></use></svg> PDF 다운로드</button>
+            <button class="btn cta-soft me-button" onclick="openDrive()" data-variant="soft" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-folder"></use></svg> 구글 드라이브에서 열기</button>
+          </div>
+        </div>
+
+        <div class="preview-toolbar">
+          <span class="note"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-file"></use></svg> 드라이브에 저장된 실제 PDF를 그대로 보여줍니다 · 여백·분량은 인쇄 결과와 동일합니다</span>
+        </div>
+
+        <div class="preview-stage" id="previewStage">
+          <div id="previewError" class="local-error me-alert" role="alert" data-tone="danger" hidden></div>
+          <div id="pdfPages" class="pdf-pages" aria-label="시험지 PDF 미리보기" aria-live="polite"></div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <dialog id="questionGenerateDialog" class="unsaved-dialog me-dialog" aria-labelledby="questionGenerateTitle">
+    <h2 id="questionGenerateTitle">해당 문항을 새로 생성합니다.</h2>
+    <p id="questionGenerateInfo"></p>
+    <p class="me-help">스크립트 출제 · 단어장의 자료로 새 후보를 만듭니다.</p>
+    <p id="questionGenerateProgress" class="question-generation-progress" role="timer" aria-live="off" hidden></p>
+    <p id="questionGenerateError" class="field-error me-help" role="alert" data-tone="danger"></p>
+    <div class="dialog-actions me-dialog-actions">
+      <button class="btn outline me-button" id="questionGenerateCancel" onclick="cancelQuestionRegeneration()" data-variant="secondary" data-size="md">취소</button>
+      <button class="btn cta me-button" id="questionGenerateConfirm" onclick="confirmQuestionRegeneration()" data-variant="primary" data-size="md">생성</button>
+    </div>
+  </dialog>
+
+  <dialog id="vocabularyDeleteDialog" class="unsaved-dialog me-dialog" aria-labelledby="vocabularyDeleteTitle" aria-describedby="vocabularyDeleteDescription">
+    <h2 id="vocabularyDeleteTitle">단어장을 삭제할까요?</h2>
+    <p id="vocabularyDeleteName" class="file-name"></p>
+    <p id="vocabularyDeleteDescription">목록에서 삭제: 원본과 Drive 파일을 보존하며, 같은 원본을 다시 등록할 수 있습니다.<br>완전히 삭제: 단어장 데이터와 앱이 저장한 원본·Drive 파일을 영구 삭제합니다. 다른 단어장이 공유하는 원본과 기존 어휘 파일은 보존합니다.<br>두 방법 모두 기존 시험지와 PDF는 유지됩니다.</p>
+    <p id="vocabularyDeleteProgress" class="me-help" role="status" hidden></p>
+    <p id="vocabularyDeleteError" class="field-error me-help" role="alert" data-tone="danger"></p>
+    <div class="dialog-actions me-dialog-actions">
+      <button type="button" class="btn outline me-button" id="vocabularyDeleteCancel" onclick="cancelVocabularyBankDeletion()" data-variant="secondary" data-size="md" autofocus>취소</button>
+      <button type="button" class="btn danger-ghost me-button" id="vocabularyDeleteConfirm" onclick="confirmVocabularyBankDeletion('soft')" data-variant="danger" data-size="md">목록에서 삭제</button>
+      <button type="button" class="btn danger-ghost me-button" id="vocabularyDeletePermanent" onclick="confirmVocabularyBankDeletion('permanent')" data-variant="danger" data-size="md">완전히 삭제</button>
+    </div>
+  </dialog>
+
+  <dialog id="vocabDeleteDialog" class="unsaved-dialog me-dialog" aria-labelledby="vocabDeleteTitle" aria-describedby="vocabDeleteDescription">
+    <h2 id="vocabDeleteTitle">어휘 파일을 삭제할까요?</h2>
+    <p id="vocabDeleteName" class="file-name"></p>
+    <p id="vocabDeleteDescription">이 엑셀 파일을 구글 드라이브 휴지통으로 옮깁니다. 이미 만들어진 시험지와 PDF는 유지됩니다.</p>
+    <p id="vocabDeleteError" class="field-error me-help" role="alert" data-tone="danger"></p>
+    <div class="dialog-actions me-dialog-actions">
+      <button class="btn outline me-button" id="vocabDeleteCancel" onclick="cancelVocabDelete()" data-variant="secondary" data-size="md">취소</button>
+      <button class="btn danger-ghost me-button" id="vocabDeleteConfirm" onclick="confirmVocabDelete()" data-variant="danger" data-size="md">삭제</button>
+    </div>
+  </dialog>
+
+  <footer class="site-footer">
+    <div class="fw">Melody English</div>
+    <div class="fl"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-message"></use></svg> 카카오톡 채널 추가</div>
+    <div class="fc">© 2026 Melody English. All rights reserved.<br>본 사이트의 모든 강의 콘텐츠는 저작권법에 의해 보호됩니다.</div>
+    <div class="fp"><a href="/privacy">개인정보 및 데이터 처리 안내</a></div>
+  </footer>
+</div>
+
+<div id="toaster" class="me-toast-stack" aria-label="알림" aria-live="polite"></div>
+
+<dialog id="unsavedDialog" class="unsaved-dialog me-dialog" aria-labelledby="unsavedTitle" aria-describedby="unsavedDescription">
+  <h2 id="unsavedTitle">저장하지 않은 변경이 있습니다</h2>
+  <p id="unsavedDescription">저장하면 구글 시트와 PDF에 반영됩니다. 변경을 폐기하면 마지막 저장본으로 돌아갑니다.</p>
+  <div class="dialog-actions me-dialog-actions">
+    <button class="btn outline me-button" data-leave="stay" autofocus data-variant="secondary" data-size="md">계속 편집</button>
+    <button class="btn ghost me-button" data-leave="discard" data-variant="ghost" data-size="md">변경 폐기</button>
+    <button class="btn cta me-button" data-leave="save" data-variant="primary" data-size="md">저장 후 이동</button>
+  </div>
+</dialog>
+
+<script src="/static/design-system/icons.js" defer></script>
+<script src="/static/design-system/components.js" defer></script>
+<script src="/static/contracts.js"></script>
+<script src="/static/worksheet-ui.js"></script>
+<script src="/static/worksheet-delete.js" defer></script>
+<link rel="stylesheet" href="/static/worksheet-download.css">
+<script src="/static/worksheet-download.js" defer></script>
+<script src="/static/app.js" defer></script>
+<link rel="stylesheet" href="/static/vocabulary-editor.css">
+<script src="/static/vocabulary-editor.js" defer></script>
+<script src="/static/workspace.js" defer></script>
+
+</body></html>
+

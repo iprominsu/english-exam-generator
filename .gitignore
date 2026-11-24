@@ -1,0 +1,30 @@
+# Local configuration and authentication
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*client_secret*.json
+*auth*.json
+*token*.json
+codex-home/
+
+# Local app state and generated documents
+.local/
+.word-meaning-cache/
+memory/
+MEMORY.md
+자료/
+output/
+*.pdf
+*.xlsx
+
+# Development tools
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+node_modules/

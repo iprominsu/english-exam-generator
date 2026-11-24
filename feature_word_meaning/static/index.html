@@ -1,0 +1,1339 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>멜로디잉글리시 · 단어–뜻 시험</title><link rel="icon" href="/static/brand/favicon.ico"><link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/design-system/tokens.css">
+<link rel="stylesheet" href="/static/design-system/base.css">
+<link rel="stylesheet" href="/static/design-system/components.css">
+<link rel="stylesheet" href="/static/word-meaning.css">
+<script src="/static/design-system/icons.js"></script>
+<script src="/static/design-system/components.js" defer></script>
+<script src="/static/contracts.js"></script>
+<script src="/static/worksheet-ui.js"></script>
+<script src="/static/worksheet-delete.js" defer></script>
+<link rel="stylesheet" href="/static/worksheet-download.css">
+<script src="/static/worksheet-download.js" defer></script>
+</head><body class="me-ui wm-app">
+<header><button class="brand" id="home" aria-label="Melody English 첫 화면으로 이동"><img class="brand-logo" src="/static/brand/logo.svg" alt="" onerror="this.hidden=true">Melody<span class="brand-dot">·</span>English<small>멜로디잉글리시</small></button><div class="row"><span class="pill me-badge">단어–뜻 시험</span><button id="legacy-home" class="me-button" data-variant="edit" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-worksheet-create"></use></svg> 기존 어휘 시험</button><button id="open-drive" class="me-button" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-folder"></use></svg> 구글 드라이브에서 열기</button></div></header>
+<main><div id="message" role="status" aria-live="polite"></div>
+<div id="home-view"><h1 class="me-title">단어–뜻 시험지 만들기</h1><p class="sub me-help">단어장을 등록하고 시험 범위를 선택하세요. 올바른 뜻을 모두 고르는 시험지를 만듭니다.</p>
+<section class="panel me-panel import-panel"><h2 class="me-heading">단어장 등록</h2><div class="row"><input id="upload-file" type="file" accept=".pdf,.xlsx" aria-label="PDF 또는 Excel 단어장"><button id="upload" class="me-button" data-variant="primary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-upload"></use></svg> 단어장 생성</button></div><p class="meta me-help">단어와 뜻을 먼저 등록합니다. 학습자료는 백그라운드에서 준비합니다. PDF · Excel 지원 · 64MB 이하 · <span id="storage-status">저장 상태 확인 중</span></p><div id="import-progress" class="notice me-alert hidden" role="timer" aria-live="off"></div></section>
+<section class="panel me-panel section wm-generation"><div class="me-section-body section-body">
+<div class="row wm-controls wm-source-controls">
+  <label class="field me-field col wm-bank-field me-label">단어장 선택<select id="bank" class="me-input"><option value="">단어장을 선택하세요</option></select></label>
+  <div class="wm-count-controls">
+  <div class="row wm-controls">
+  <label class="field me-field col wm-count-mode me-label">문항 수<select id="count-mode"><option value="all">선택 범위 전체</option><option value="custom" selected>개수 지정</option></select></label>
+  <label class="field me-field col wm-count-field me-label" id="count-field">시험지당 문항 수<input id="count" class="me-input" aria-describedby="count-feedback-title count-feedback-description" type="number" min="1" step="1" value="40"></label>
+  </div>
+  <div id="count-feedback" class="wm-field-feedback hidden">
+    <div role="status" aria-live="polite" aria-atomic="true"><strong id="count-feedback-title"></strong><p id="count-feedback-description"></p></div>
+    <button id="use-available-count" type="button" class="me-button hidden" data-variant="secondary" data-size="sm"></button>
+  </div>
+  </div>
+</div>
+<div class="wm-range" role="group" aria-labelledby="scope-label">
+  <div id="scope-label" class="wm-range-label">출제 범위</div>
+  <div id="scope-mode" class="me-segmented" role="group" data-me-selectable aria-label="출제 범위 지정 방식">
+    <button id="scope-mode-range" type="button" data-value="range" aria-pressed="true" aria-controls="scope-range">범위로 지정</button>
+    <button id="scope-mode-selection" type="button" data-value="selection" aria-pressed="false" aria-controls="scope-selection">선택으로 지정</button>
+    <button id="scope-mode-bulk" type="button" data-value="bulk" aria-pressed="false" aria-controls="scope-bulk">다중 작업</button>
+  </div>
+  <div id="scope-range" class="wm-scope-panel">
+    <div class="wm-range-fields">
+      <label class="me-field"><span>시작 챕터</span><select id="range-start" class="me-input" aria-describedby="scope-summary" disabled><option value="">시작 챕터 선택</option></select></label>
+      <span class="wm-range-separator" aria-hidden="true">~</span>
+      <label class="me-field"><span>끝 챕터</span><select id="range-end" class="me-input" aria-describedby="scope-summary" disabled><option value="">끝 챕터 선택</option></select></label>
+    </div>
+  </div>
+  <div id="scope-selection" class="wm-scope-panel" hidden><div id="units" class="units" role="group" aria-label="출제 챕터 선택"></div></div>
+  <div id="scope-bulk" class="wm-scope-panel" hidden>
+    <p class="me-help wm-bulk-help">범위 안의 각 DAY·챕터마다 시험지를 1부씩 만듭니다. 단어가 지정 문항 수보다 적으면 해당 챕터의 출제 가능한 단어를 모두 사용합니다.</p>
+    <div class="wm-range-fields">
+      <label class="me-field"><span>시작 챕터</span><select id="bulk-start" class="me-input" aria-label="다중 작업 시작 챕터" aria-describedby="scope-summary" disabled><option value="">시작 챕터 선택</option></select></label>
+      <span class="wm-range-separator" aria-hidden="true">~</span>
+      <label class="me-field"><span>끝 챕터</span><select id="bulk-end" class="me-input" aria-label="다중 작업 끝 챕터" aria-describedby="scope-summary" disabled><option value="">끝 챕터 선택</option></select></label>
+    </div>
+    <div id="bulk-plan" class="wm-bulk-plan hidden"></div>
+  </div>
+  <p id="scope-summary" class="me-help wm-scope-summary" role="status" aria-live="polite">단어장을 선택하면 출제 범위를 지정할 수 있습니다.</p>
+  <div class="wm-bank-meta"><div id="bank-counts" class="meta me-help"></div><div id="bank-drive-links" class="meta me-help"></div><button id="refresh" class="me-button" type="button" data-variant="secondary" data-size="sm"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-refresh"></use></svg> 새로고침</button></div>
+</div>
+<div id="pending-notice" class="notice me-alert wm-pending hidden" data-tone="warning" role="group" tabindex="-1" aria-labelledby="pending-title" aria-describedby="pending-description">
+  <div class="wm-pending-heading">
+    <span id="pending-icon" class="wm-pending-icon" aria-hidden="true"></span>
+    <div class="wm-pending-copy" role="status" aria-live="polite" aria-atomic="true">
+      <strong id="pending-title"></strong>
+      <p id="pending-description"></p>
+    </div>
+  </div>
+  <label class="check me-check wm-pending-option"><input id="partial" type="checkbox" aria-describedby="pending-description">확인 대기 항목을 제외하고 출제</label>
+</div>
+<div class="row wm-options"><label class="check me-check"><input id="shuffle" type="checkbox">문항 순서 섞기</label></div>
+<div class="row wm-controls wm-actions"><label class="field me-field col wm-title-field me-label">시험 제목<input id="title" class="me-input" aria-describedby="generation-status" type="text" placeholder="단어장 이름을 사용합니다" maxlength="160"></label><button id="selection" class="me-button" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-preview"></use></svg> 출제 단어 확인</button><button id="generate" class="me-button" data-variant="primary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-worksheet-create"></use></svg> 시험지 생성</button></div>
+<div id="generation-feedback" class="wm-form-feedback hidden" role="status" aria-live="polite" tabindex="-1"></div>
+<p id="generation-status" class="meta wm-status me-help">등록한 단어장의 뜻으로 시험지를 자동 생성합니다.</p><div id="selection-preview" class="notice me-alert hidden"></div><div id="generation-progress" class="notice me-alert hidden" role="timer" aria-live="off"></div>
+<section id="review-panel" class="panel me-panel wm-review hidden"><h2 class="me-heading">확인이 필요한 어휘</h2><p class="sub me-help">원본을 보고 단어와 뜻을 고친 뒤 등록하세요. 원문과 출처는 함께 보존됩니다.</p><div id="review-entries"></div></section>
+<details id="jobs-panel" class="wm-jobs"><summary>작업 진행과 재시도</summary><p class="meta me-help">삭제하면 작업 메시지만 목록에서 사라집니다. 진행 중인 작업과 생성된 시험지는 유지됩니다.</p><div id="jobs"><p class="me-help">열어서 진행 중이거나 중단된 작업을 확인하세요.</p></div></details>
+</div></section>
+<section class="panel me-panel section wm-worksheets" aria-labelledby="wm-worksheet-heading"><div class="section-head me-section-head"><h2 id="wm-worksheet-heading">만들어진 시험지</h2><span class="sub me-help">미리보기·수정하거나 드라이브에서 바로 열 수 있습니다</span><div class="worksheet-sort"><select id="wm-worksheet-sort" class="me-input" aria-label="단어 뜻 시험지 정렬 기준"><option value="latest">최신순</option><option value="created" selected>생성순</option><option value="name">이름순</option></select><button type="button" id="wm-worksheet-direction" class="me-button sort-direction" data-variant="secondary" data-direction="desc" aria-label="내림차순 · 오름차순으로 변경" title="내림차순 · 오름차순으로 변경">
+<svg class="me-icon sort-desc" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sort-desc"></use></svg>
+<svg class="me-icon sort-asc" data-size="20" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-sort-asc"></use></svg>
+</button></div></div><div class="me-section-body section-body wm-list-body"><div id="worksheets" class="wslist"></div></div></section></div>
+<div id="editor-view" class="hidden">
+<div class="page-head"><div><button id="back" class="me-button" data-variant="ghost" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-arrow-left"></use></svg> 목록</button><h1 class="me-title" id="editor-heading"></h1><p id="editor-meta" class="sub me-help"></p></div><span class="sp"></span><div class="page-head-right"><button id="editor-preview" class="me-button" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-preview"></use></svg> 인쇄 미리보기</button><button id="editor-drive" class="me-button" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-folder"></use></svg> 구글 드라이브에서 열기</button></div></div>
+<div class="split wm-edit-split"><section class="pane me-panel"><div class="pane-head me-section-head">간이 미리보기 · 인쇄 배치는 PDF에서 확인 <span class="live">실시간 반영</span></div><div class="mini-preview-scroll"><div id="wm-mini-paper"></div></div></section><section class="pane me-panel"><div class="pane-head me-section-head">문항 편집</div><div class="edit-scroll"><label class="field me-field me-label">시험 제목<input id="edit-title" type="text" maxlength="160" class="me-input"></label><p id="editor-instructions" class="meta me-help">자동 출제는 선지 5개이며, 나열된 뜻을 각각 정답으로 출제합니다. 뜻이 5개를 넘으면 일부를 묶고, 정답만 5개인 문항도 허용합니다. 수정 시 답항을 자유롭게 추가·삭제할 수 있습니다. 왼쪽 체크가 정답이며 원문 뜻과 정답을 확인하세요.</p><p id="save-status" class="meta me-help" role="status" aria-live="polite"></p><div id="questions"></div></div></section></div>
+<div id="editor-feedback" class="wm-local-feedback hidden" role="status" aria-live="polite"></div>
+<div class="savebar me-savebar"><span class="info">저장하면 시험지가 갱신됩니다. 수정 후 PDF를 재생성해 주세요.</span><span class="sp"></span><button id="save" class="me-button" data-variant="primary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-save"></use></svg> 수정 저장</button><button id="render" class="me-button" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-refresh"></use></svg> PDF 재생성</button></div><div id="worksheet-drive-links" class="meta me-help"></div></div>
+<div id="preview-view" class="hidden"><div class="page-head"><div><button id="preview-back" class="me-button" data-variant="ghost" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-arrow-left"></use></svg> 목록</button><h1 class="me-title" id="preview-heading"></h1><p id="preview-meta" class="sub me-help">인쇄 미리보기 · 실제 PDF와 동일한 여백·분량</p></div><span class="sp"></span><div class="page-head-right"><button id="preview-edit" class="me-button" data-variant="edit" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-edit"></use></svg> 문항 수정</button><button id="preview-render" class="me-button" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-refresh"></use></svg> PDF 재생성</button><button id="download" class="me-button" data-variant="primary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-download"></use></svg> PDF 다운로드</button><button id="preview-drive" class="me-button" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-folder"></use></svg> 구글 드라이브에서 열기</button></div></div><div class="preview-toolbar"><label>표시할 시험지 <select id="pdf-kind" aria-label="문제지 또는 정답지" class="me-input"><option value="student">학생용 문제지</option><option value="answer">교사용 정답지</option></select></label><span class="note">저장된 실제 PDF를 보여줍니다.</span></div><div id="preview-feedback" class="wm-local-feedback hidden" role="status" aria-live="polite"></div><div class="preview-stage"><button id="pdf-retry" type="button" class="me-button wm-pdf-retry hidden" data-variant="secondary" data-size="md">다시 불러오기</button><div id="wm-pdf-pages" class="pdf-pages" aria-label="시험지 PDF 미리보기" aria-live="polite"></div></div></div>
+
+<dialog class="me-dialog" id="leave-dialog" aria-labelledby="leave-heading"><h2 id="leave-heading">저장하지 않은 수정이 있습니다</h2><p class="sub me-help">수정 내용을 저장하거나, 폐기하고 이동하거나, 편집을 계속할 수 있습니다.</p><div class="row me-dialog-actions"><button id="leave-save" class="me-button" data-variant="primary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-save"></use></svg> 저장 후 이동</button><button id="leave-discard" class="me-button" data-variant="secondary" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-trash"></use></svg> 폐기 후 이동</button><button id="leave-keep" class="me-button" data-variant="edit" data-size="md"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-edit"></use></svg> 계속 편집</button></div></dialog>
+<script>
+
+const API='/api/word-meaning';
+const FEATURE_KIND=new URLSearchParams(window.location?.search||'').get('worksheet_kind')==='meaning_writing_test'?'meaning_writing_test':'word_meaning_test';
+const writingMode=FEATURE_KIND==='meaning_writing_test';
+const featureLabel=writingMode?'뜻 쓰기 시험':'단어–뜻 시험';
+function isWritingWorksheet(){return currentWorksheet?.worksheet_kind==='meaning_writing_test'||(!currentWorksheet&&writingMode);}
+function uiIcon(name){return window.MelodyIcons?window.MelodyIcons.svg(name,{size:16}):'';}
+const INTENTS_KEY=writingMode?'melody-meaning-writing-intents-v1':'melody-word-meaning-intents-v1';
+let currentBank=null,currentWorksheet=null,dirty=false,editorEpoch=0,inputRevision=0,bankEpoch=0,homeRevision=0,bankRefreshSerial=0;
+let editorBusy=false,entryBusy=false,leaveDecision=null,editorTaskStarted=null;
+let featureStatus=null,previewSerial=0;
+let scopeMode='range';
+let scopeReviewError=null;
+let availableCountCorrection=null;
+let previewTask=null,previewController=null,previewRenderer=null;
+const pdfDownloads=new Set();
+let loadPdfRenderer=()=>import('/static/vendor/pdfjs/pdf.min.mjs');
+let autoResumeRunning=false;const resumeQueue=[],resumeQueued=new Set();
+const entryDrafts=new Map(),pollingJobs=new Map(),progressOwners=new Map(),regenerationStates=new Map(),editorDisabled=new Map();
+const jobElapsedStates=new Map();let taskProgressSerial=0;
+const IMPORT_ACTIVITY_KEY='melody-word-meaning-import-active-v1';
+const dismissedJobMessages=new Set(),jobDismissalTimes=new Map();
+let latestJobs=[];
+const jobMonitorErrors=new Map(),jobViewContexts=new Map();
+const $=id=>document.getElementById(id);
+$('count-mode').classList.add('me-input');
+const initialParams=new URLSearchParams(window.location?.search||'');
+const embedded=Boolean(initialParams.get('embedded')==='1'&&window.parent&&window.parent!==window);
+if(embedded)document.documentElement?.classList.add('embedded');
+if(writingMode){
+  document.title='멜로디잉글리시 · 뜻 쓰기 시험';
+  $('count').value='30';$('shuffle').checked=true;
+  const options=$('shuffle').closest('.wm-options');if(options)options.hidden=true;
+  const heading=document.querySelector?.('#home-view > h1');if(heading)heading.textContent='뜻 쓰기 시험지 만들기';
+  const help=document.querySelector?.('#home-view > .sub');if(help)help.textContent='단어장을 등록하고 시험 범위를 선택하세요. 단어의 뜻을 직접 쓰는 시험지를 만듭니다.';
+  const badge=document.querySelector?.('header .pill');if(badge)badge.textContent=featureLabel;
+  $('wm-worksheet-sort').setAttribute('aria-label','뜻 쓰기 시험지 정렬 기준');
+  $('editor-instructions').textContent='등록된 뜻과 품사를 바탕으로 정답을 제시합니다. 영단어와 정답 뜻을 직접 수정할 수 있으며, 교체 버튼은 선택 범위에서 아직 출제되지 않은 단어를 고릅니다.';
+}
+let layoutQueued=false;
+function reportEmbeddedLayout(){
+  layoutQueued=false;
+  if(!embedded)return;
+  const editor=!$('editor-view').classList.contains('hidden')||!$('preview-view').classList.contains('hidden');
+  const view=!$('editor-view').classList.contains('hidden')?'editor':!$('preview-view').classList.contains('hidden')?'preview':'home';
+  document.documentElement?.style?.setProperty('--embedded-pane-height',Math.round(window.parent.innerHeight*.74)+'px');
+  document.documentElement?.classList.toggle('embedded-editor',editor);
+  const autosize=typeof window.parent?.updateWordMeaningLayout==='function';
+  document.documentElement?.classList.toggle('embedded-autosize',autosize);
+  if(!autosize)return;
+  const main=document.querySelector?.('main');
+  if(!main||typeof main.getBoundingClientRect!=='function')return;
+  const height=Math.ceil(main.getBoundingClientRect().height);
+  if(height>0)window.parent.updateWordMeaningLayout({height,editor,view},window);
+}
+function queueEmbeddedLayout(){
+  if(!embedded||layoutQueued)return;
+  layoutQueued=true;
+  if(typeof window.requestAnimationFrame==='function')window.requestAnimationFrame(reportEmbeddedLayout);
+  else reportEmbeddedLayout();
+}
+function syncTheme(theme){
+  const root=document.documentElement;
+  if(!embedded||!root)return;
+  if(theme==='light'||theme==='dark')root.setAttribute('data-theme',theme);
+  else root.removeAttribute?.('data-theme');
+  queueEmbeddedLayout();
+}
+function observeEmbeddedLayout(){
+  if(!embedded)return;
+  const main=document.querySelector?.('main');
+  if(main&&typeof ResizeObserver==='function')new ResizeObserver(queueEmbeddedLayout).observe(main);
+  window.addEventListener('resize',queueEmbeddedLayout);
+  window.parent.addEventListener('resize',queueEmbeddedLayout);
+  queueEmbeddedLayout();
+}
+const displayScope=value=>String(value||'').replace(/11\s*강\s*41\s*(?:쪽|번)?\s*[-~–—]\s*50\s*(?:쪽|번)?/g,'11강(a)').replace(/11\s*강\s*51\s*(?:쪽|번)?\s*[-~–—]\s*60\s*(?:쪽|번)?/g,'11강(b)');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const json=(method,data)=>({method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+let documentToast=null;
+function clearMessage(){documentToast?.dismiss();documentToast=null;$('message').textContent='';queueEmbeddedLayout();}
+function message(text,error=false){
+  clearMessage();
+  if(!error){
+    const ui=embedded?window.parent.MelodyUI:window.MelodyUI;
+    if(ui){documentToast=ui.toast(text,{tone:'success',duration:5000});return;}
+  }
+  const element=$('message');element.className=error?'error me-alert':'success me-alert';element.dataset.tone=error?'danger':'success';element.setAttribute('role',error?'alert':'status');element.textContent=text;queueEmbeddedLayout();
+}
+function feedback(element,text='',tone='danger'){
+  if(!element)return;
+  element.textContent=text;element.dataset.tone=tone;
+  element.classList.toggle('hidden',!text);queueEmbeddedLayout();
+}
+function elapsedText(text,started){return text+' · '+Math.max(0,Math.floor((performance.now()-started)/1000))+'초 경과';}
+function importTransient(error){return !error.status||[408,409,425,429,500,502,503,504].includes(error.status);}
+function importWait(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+function importRecoveryDelay(job){const next=Date.parse(job.recovery?.next_attempt_at||'');return Number.isFinite(next)?Math.max(0,next-Date.now()):0;}
+function workingImportMessage(job){const stage=job.progress?.stage;return job.recovery?.active?'원문을 다시 확인하며 자동 재시도하고 있습니다.':stage==='saving'?'원문 단어와 뜻을 단어은행에 저장하고 있습니다.':stage==='learning'?'AI가 원문 뜻에 맞는 학습자료를 정리하고 있습니다.':stage==='source_read'?'원문 파일의 단어와 뜻을 읽고 있습니다.':job.message||'원문 단어와 뜻을 확인하고 있습니다.';}
+function parentImportMonitor(id){try{return embedded?window.parent?.MelodyVocabularyImports?.active?.(id)||null:null;}catch{return null;}}
+const importRegistrationWaiters=new Map(),importRegistrationNoticeKey='melody-vocabulary-registered-v1';
+function importIsRegistered(job){return job?.registration_status==='complete'||job?.status==='complete';}
+function importBankId(job){return job?.bank_id||job?.result_id;}
+function importPageVisible(){return document.visibilityState!=='hidden'&&(!embedded||!window.frameElement?.closest?.('[hidden]'));}
+function announceImportRegistered(job){
+  if(!importIsRegistered(job))return;
+  try{if(embedded&&window.parent.MelodyVocabularyImports?.notifyRegistered){window.parent.MelodyVocabularyImports.notifyRegistered(job);return;}}catch{}
+  let seen=[];try{seen=JSON.parse(sessionStorage.getItem(importRegistrationNoticeKey)||'[]');}catch{}
+  if(seen.includes(job.id))return;
+  try{sessionStorage.setItem(importRegistrationNoticeKey,JSON.stringify([...seen,job.id].slice(-200)));}catch{}
+  message('단어장 등록이 완료되었습니다.');
+}
+function observeImportRegistration(job){
+  if(job.kind!=='import'||!importIsRegistered(job))return;
+  const waiter=importRegistrationWaiters.get(job.id);
+  if(waiter){waiter.resolve(job);importRegistrationWaiters.delete(job.id);}
+  clearImportActivity(job.id);
+}
+function waitForImportRegistration(id,target,options={}){
+  let parentMonitor=parentImportMonitor(id);
+  try{if(!parentMonitor&&embedded&&window.parent.MelodyVocabularyImports?.monitor)parentMonitor=window.parent.MelodyVocabularyImports.monitor(id,Date.now()-Math.max(0,performance.now()-(options.started??performance.now())));}catch{}
+  let registration=parentMonitor?.registration;
+  if(!registration){
+    let waiter=importRegistrationWaiters.get(id);
+    if(!waiter){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});waiter={promise,resolve,reject};importRegistrationWaiters.set(id,waiter);}
+    registration=waiter.promise;
+  }
+  pollJob(id,target,options).then(job=>observeImportRegistration(job)).catch(error=>{
+    const waiter=importRegistrationWaiters.get(id);if(waiter){waiter.reject(error);importRegistrationWaiters.delete(id);}
+  });
+  const observed=jobElapsedStates.get(id)?.job;if(observed)observeImportRegistration(observed);
+  return registration.then(job=>{observeImportRegistration(job);return job;});
+}
+function rememberImportActivity(id,started){try{if(id)sessionStorage.setItem(IMPORT_ACTIVITY_KEY,JSON.stringify({id,startedAt:Date.now()-Math.max(0,performance.now()-started)}));else sessionStorage.removeItem(IMPORT_ACTIVITY_KEY);}catch{}}
+function savedImportActivity(){try{const saved=JSON.parse(sessionStorage.getItem(IMPORT_ACTIVITY_KEY)||'null');return saved&&/^j_[a-f0-9]{32}$/.test(saved.id)&&Number.isFinite(saved.startedAt)&&saved.startedAt>0?saved:null;}catch{return null;}}
+function clearImportActivity(id){const saved=savedImportActivity();if(saved?.id===id)rememberImportActivity(null);}
+async function acceptImportFile(form,activity){
+  let failures=0;
+  for(;;){
+    try{return await request('/imports',{method:'POST',body:form});}
+    catch(error){if(!importTransient(error))throw error;failures++;activity.update('파일 접수 상태를 다시 확인하고 있습니다. 같은 원본으로 등록을 이어갑니다.');await importWait(Math.min(15000,1000*2**Math.min(failures-1,4)));}
+  }
+}
+function startTaskProgress(target,text,context,{owner='task:'+(++taskProgressSerial),started=performance.now()}={}){
+  let timer=null,stopped=false;
+  const stop=()=>{if(stopped)return;stopped=true;clearInterval(timer);if(progressOwners.get(target)===owner){progressOwners.delete(target);feedback($(target));}};
+  const tick=()=>{if(progressOwners.get(target)!==owner||!sameViewContext(context)){stop();return;}feedback($(target),elapsedText(text,started),'neutral');};
+  progressOwners.set(target,owner);tick();if(!stopped)timer=setInterval(tick,1000);
+  return{owner,started,stop,update:value=>{text=value;tick();}};
+}
+function clearDocumentFeedback(){
+  feedback($('editor-feedback'));feedback($('preview-feedback'));
+  for(const element of $('questions').querySelectorAll('.question-feedback'))feedback(element);
+  clearMessage();
+}
+function editorMessage(text,error=false){
+  const id=$('preview-view').classList.contains('hidden')?'editor-feedback':'preview-feedback';
+  feedback($(id),text,error?'danger':'success');
+}
+function questionMessage(id,text,error=false){
+  const element=questionElement(id)?.querySelector('.question-feedback');
+  if(element)feedback(element,text,error?'danger':'success');else editorMessage(text,error);
+}
+function networkSignal(timeout,signal){
+  if(typeof AbortSignal==='undefined'||typeof AbortSignal.timeout!=='function')return signal;
+  const deadline=AbortSignal.timeout(timeout);
+  return signal&&typeof AbortSignal.any==='function'?AbortSignal.any([signal,deadline]):signal||deadline;
+}
+async function request(path,options={}){
+  const {forceBank=false,...fetchOptions}=options;
+  const execute=async()=>{
+    const managementView=(!fetchOptions.method||fetchOptions.method==='GET')&&/^\/banks\/[^/]+$/.test(path);
+    fetchOptions.signal=networkSignal(!fetchOptions.method||fetchOptions.method==='GET'?90000:900000,fetchOptions.signal);
+    try{
+    const res=await fetch(API+path+(managementView?'?view=management':''),fetchOptions);let data;
+    try{data=await res.json()}catch(error){if(error.name==='TimeoutError'||error.name==='AbortError')throw error;if(res.ok)throw Error('서버 응답을 읽을 수 없습니다. 다시 시도해 주세요.');data={detail:'응답을 읽을 수 없습니다.'}}
+    if(!res.ok){const d=data.detail;const error=Error(typeof d==='string'?d:d?.message||'요청을 처리하지 못했습니다.');error.status=res.status;error.code=d?.code;error.details=d?.details;throw error;}
+    if(fetchOptions.method&&fetchOptions.method!=='GET'&&(path.startsWith('/banks/')||path.startsWith('/imports')))window.MelodyBankData?.invalidate();
+    return data;
+    }catch(error){
+      if(error.name==='TimeoutError')throw Object.assign(Error('서버 응답이 지연되고 있습니다. 연결 상태와 작업 목록을 확인한 뒤 다시 시도해 주세요.'),{name:'TimeoutError',status:408});
+      throw error;
+    }
+  };
+  return (!fetchOptions.method||fetchOptions.method==='GET')&&/^\/banks(?:\/[^/]+)?$/.test(path)&&window.MelodyBankData?window.MelodyBankData.get(path,execute,{force:forceBank}):execute();
+}
+function readIntents(){
+  let saved;try{saved=localStorage.getItem(INTENTS_KEY);}catch{throw Error('브라우저에 작업 정보를 저장할 수 없습니다. 사이트 저장 공간 설정을 확인해 주세요.');}
+  try{
+    const records=JSON.parse(saved||'[]');
+    return Array.isArray(records)?records.filter(r=>r&&['generate','regenerate','replace','bulk'].includes(r.kind)&&typeof r.signature==='string'&&/^[a-zA-Z0-9-]{20,80}$/.test(r.request_id)&&(!r.job_id||typeof r.job_id==='string')&&(!r.job_ids||Array.isArray(r.job_ids)&&r.job_ids.every(id=>typeof id==='string'))):[];
+  }catch{return[];}
+}
+function writeIntents(records){
+  try{localStorage.setItem(INTENTS_KEY,JSON.stringify(records));}catch{throw Error('브라우저에 작업 정보를 저장할 수 없습니다. 사이트 저장 공간 설정을 확인해 주세요.');}
+}
+function intentFor(kind,signature){
+  const records=readIntents(),existing=records.find(r=>r.kind===kind&&r.signature===signature);
+  if(existing)return existing;
+  const intent={kind,signature,request_id:crypto.randomUUID(),job_id:null};
+  writeIntents([...records,intent]);return intent;
+}
+function rememberIntentJob(intent,jobId){
+  intent.job_id=jobId;
+  const records=readIntents(),record=records.find(r=>r.request_id===intent.request_id);
+  if(record){record.job_id=jobId;writeIntents(records);}
+}
+function rememberBulkIntent(intent,result){
+  Object.assign(intent,{job_ids:result.job_ids,ranges:result.ranges,batch_id:result.batch_id});
+  const records=readIntents(),record=records.find(r=>r.request_id===intent.request_id);
+  if(record){Object.assign(record,{job_ids:intent.job_ids,ranges:intent.ranges,batch_id:intent.batch_id});writeIntents(records);}
+}
+function clearIntent(intent){
+  const records=readIntents();writeIntents(records.filter(r=>r.request_id!==intent.request_id));
+}
+function reconcileIntents(jobs){
+  let records;try{records=readIntents();}catch{return;}
+  let changed=false;
+  const remaining=records.filter(record=>{
+    if(record.kind==='bulk'){
+      if(!record.job_ids?.length)return true;
+      const children=record.job_ids.map(id=>jobs.find(job=>job.id===id));
+      if(children.every(job=>job&&['complete','failed'].includes(job.status))){changed=true;return false;}
+      return true;
+    }
+    const job=jobs.find(j=>record.job_id===j.id||record.request_id===(j.request_id||j.payload?.request_id));
+    if(!job)return true;
+    if(['complete','failed'].includes(job.status)){changed=true;return false;}
+    if(record.job_id!==job.id){record.job_id=job.id;changed=true;}
+    return true;
+  });
+  if(changed)writeIntents(remaining);
+}
+async function action(button,work){
+  const context=captureViewContext();
+  const generationAction=['selection','generate'].includes(button.id);
+  if(generationAction){clearGenerationFeedback();$('selection-preview').classList.add('hidden');}
+  const wasDisabled=button.disabled;button.disabled=true;button.setAttribute('aria-busy','true');
+  try{return await work()}catch(e){
+    if(e.jobId)return;
+    if(generationAction)showGenerationError(e,context);else if(sameViewContext(context)){
+      if(currentWorksheet&&($('home-view').classList.contains('hidden')))editorMessage(e.message,true);else message(e.message,true);
+    }
+  }
+  finally{if(button.isConnected){button.disabled=wasDisabled;button.removeAttribute('aria-busy');}}
+}
+function sameEditor(context){return context&&context.epoch===editorEpoch&&context.id===currentWorksheet?.id;}
+function captureViewContext(){return{epoch:editorEpoch,worksheetId:currentWorksheet?.id||null,bankEpoch,bankId:currentBank?.id||null,inputRevision,homeRevision};}
+function sameViewContext(context){return context.epoch===editorEpoch&&context.worksheetId===(currentWorksheet?.id||null)&&context.bankEpoch===bankEpoch&&context.bankId===(currentBank?.id||null)&&context.inputRevision===inputRevision&&context.homeRevision===homeRevision;}
+function homeChanged(){homeRevision++;clearMessage();$('selection-preview').classList.add('hidden');clearGenerationFeedback();renderBulkPlan();}
+function clearGenerationFeedback(){
+  availableCountCorrection=null;
+  for(const id of ['count-feedback','generation-feedback','use-available-count'])$(id).classList.add('hidden');
+  for(const id of ['count-feedback-title','count-feedback-description','generation-feedback'])$(id).textContent='';
+  $('count').removeAttribute('aria-invalid');
+  $('pending-notice').removeAttribute('data-blocked');
+  queueEmbeddedLayout();
+}
+function fieldError(text,field){const error=Error(text);error.field=field;return error;}
+function showGenerationError(error,context){
+  if(!sameViewContext(context)||$('home-view').classList.contains('hidden')||(embedded&&window.frameElement?.closest?.('[hidden]')))return;
+  if(showScopeReviewError(error,context))return;
+  const available=scopeMode!=='bulk'&&error.code==='invalid_selection'?error.details?.available_count:null;
+  if(error.field==='count'||(Number.isInteger(available)&&available>0)){
+    availableCountCorrection=Number.isInteger(available)&&available>0?available:null;
+    $('count-feedback-title').textContent=availableCountCorrection!==null?'최대 '+available+'문항까지 출제할 수 있습니다.':error.message;
+    $('count-feedback-description').textContent=availableCountCorrection!==null?'문항 수를 줄이거나 출제 범위를 넓혀 주세요.':'1 이상의 정수를 입력해 주세요.';
+    const correction=$('use-available-count');
+    correction.classList.toggle('hidden',availableCountCorrection===null);
+    correction.textContent=availableCountCorrection!==null?available+'문항으로 변경':'';
+    $('count-feedback').classList.remove('hidden');
+    $('count').setAttribute('aria-invalid','true');
+    $('count').focus({preventScroll:true});$('count').scrollIntoView({block:'center',behavior:'smooth'});
+  }else{
+    const feedback=$('generation-feedback');
+    feedback.textContent=error.message;feedback.classList.remove('hidden');
+    feedback.focus({preventScroll:true});feedback.scrollIntoView({block:'center',behavior:'smooth'});
+  }
+  queueEmbeddedLayout();
+}
+function updateSaveStatus(){
+  $('save-status').setAttribute('aria-live',editorBusy?'off':'polite');
+  $('save-status').textContent=editorBusy?elapsedText('처리 중입니다. 잠시 기다려 주세요.',editorTaskStarted??performance.now()):dirty?'저장하지 않은 수정이 있습니다.':'저장된 내용입니다.';
+}
+function syncEditorLock(){
+  $('editor-view').setAttribute('aria-busy',String(editorBusy));
+  const controls=[$('home'),$('legacy-home'),...$('editor-view').querySelectorAll('button,input,textarea,select'),...$('preview-view').querySelectorAll('button,select')];
+  if(editorBusy){
+    controls.forEach(el=>{if(!editorDisabled.has(el))editorDisabled.set(el,el.disabled);el.disabled=true;});
+  }else{
+    editorDisabled.forEach((disabled,el)=>{if(el.isConnected)el.disabled=disabled||el.dataset.keepDisabled==='true';});
+    editorDisabled.clear();
+  }
+  updateSaveStatus();if(!editorBusy)showPdf();
+}
+async function editorOperation(work,{questionId=null}={}){
+  if(editorBusy||!currentWorksheet)return;
+  const context={epoch:editorEpoch,id:currentWorksheet.id,revision:inputRevision};
+  feedback($('editor-feedback'));feedback($('preview-feedback'));
+  if(questionId)feedback(questionElement(questionId)?.querySelector('.question-feedback'));
+  editorBusy=true;editorTaskStarted=performance.now();syncEditorLock();const timer=setInterval(updateSaveStatus,1000);
+  try{return await work(context)}
+  catch(e){if(sameEditor(context)&&context.revision===inputRevision){if(questionId&&!e.editorSave)questionMessage(questionId,e.message,true);else editorMessage(e.message,true);}}
+  finally{clearInterval(timer);editorTaskStarted=null;editorBusy=false;syncEditorLock();}
+}
+function acceptWorksheet(context,worksheet,revision){
+  if(!sameEditor(context))return false;
+  currentWorksheet=worksheet;
+  if(revision!==inputRevision){
+    dirty=true;showPdf();updateSaveStatus();
+    editorMessage('처리 중 추가한 수정이 있습니다. 수정 내용을 다시 저장해 주세요.');
+    return false;
+  }
+  dirty=false;renderEditor();return true;
+}
+function worksheetDownloadButtons(worksheet){
+  return [['student','문제지'],['answer','정답지'],['combined','전체']].map(([kind,label])=>{
+    const available=!worksheet.pdfs_stale&&(kind==='combined'?worksheet.pdfs?.student&&worksheet.pdfs?.answer:worksheet.pdfs?.[kind]);
+    return '<button class="me-button download-worksheet" data-variant="secondary" data-size="sm" data-id="'+esc(worksheet.id)+'" data-title="'+esc(worksheet.title)+'" data-kind="'+kind+'"'+(available?'':' disabled')+'>'+uiIcon('download')+label+'</button>';
+  }).join('');
+}
+function worksheetDeleteButton(worksheet){
+  return '<button type="button" class="me-icon-button delete-worksheet" data-variant="danger" data-size="sm" data-id="'+esc(worksheet.id)+'" data-version="'+worksheet.version+'" data-title="'+esc(worksheet.title)+'" aria-label="'+esc(worksheet.title)+' 삭제" title="시험지 삭제">'+uiIcon('trash')+'</button>';
+}
+async function deleteWorksheet(button){
+  const manager=embedded&&window.parent.MelodyWorksheetDelete||window.MelodyWorksheetDelete;
+  if(!manager)throw Error('삭제 화면을 불러오지 못했습니다. 새로고침해 주세요.');
+  return manager.open({title:button.dataset.title,onDelete:async mode=>{
+    const result=await request('/worksheets/'+button.dataset.id,json('DELETE',{mode,version:Number(button.dataset.version)}));
+    if(result.id!==button.dataset.id||!result.deleted)throw Error('삭제 결과를 확인하지 못했습니다. 목록을 새로고침해 주세요.');
+    if(currentWorksheet?.id===result.id){currentWorksheet=null;dirty=false;showHome();}
+    worksheetDeleted(result.id);
+    if(embedded)window.parent.removeManagedWorksheet?.({kind:writingMode?'meaning-writing':'word-meaning',id:result.id});
+  }});
+}
+let worksheetRows=[],meaningSortKey='created',meaningSortDirection='desc',worksheetRefreshSerial=0;
+function worksheetDriveButton(worksheet){
+  return '<button class="me-icon-button drive-worksheet" data-variant="secondary" data-size="sm" data-id="'+esc(worksheet.id)+'" aria-label="'+esc(worksheet.title)+' · 구글 드라이브에서 열기" title="구글 드라이브에서 열기"'+(worksheet.deletion_pending?' disabled':'')+'>'+uiIcon('google-drive')+'</button>';
+}
+
+function renderWorksheetList(){
+  const ordered=window.MelodyWorksheetList.sort(worksheetRows,meaningSortKey,meaningSortDirection);
+  $('worksheets').innerHTML=ordered.length?ordered.map(w=>'<div class="list-item"><div><b>'+esc(w.title)+'</b><div class="meta me-help">'+esc(displayScope(w.range_label))+' · 문항 '+w.count+'개'+(w.deletion_pending?' · 삭제 미완료':'')+'</div></div><div class="list-acts"><button class="me-button preview-worksheet" data-variant="secondary" data-size="sm" data-id="'+esc(w.id)+'"'+(w.deletion_pending?' disabled':'')+'>'+uiIcon('preview')+'미리보기</button><button class="me-button open-worksheet" data-variant="edit" data-size="sm" data-id="'+esc(w.id)+'"'+(w.deletion_pending?' disabled':'')+'>'+uiIcon('edit')+'수정</button>'+(w.deletion_pending?'':worksheetDownloadButtons(w))+worksheetDriveButton(w)+worksheetDeleteButton(w)+'</div></div>').join(''):'<div class="empty me-empty">아직 만든 시험지가 없습니다.</div>';
+  queueEmbeddedLayout();
+}
+async function refreshWorksheetLists(){
+  const serial=++worksheetRefreshSerial;
+  const worksheets=await request('/worksheets');
+  if(serial!==worksheetRefreshSerial)return;
+  worksheetRows=worksheets.filter(row=>(row.worksheet_kind||'word_meaning_test')===FEATURE_KIND);renderWorksheetList();return {worksheets:worksheetRows};
+}
+async function refreshBanks(force=false){
+  const serial=++bankRefreshSerial;
+  const [banks,status]=await Promise.all([request('/banks',{forceBank:force}),!force&&featureStatus?Promise.resolve(featureStatus):request('/status')]);
+  if(serial!==bankRefreshSerial)return{banks,status};
+  featureStatus=status;
+  $('storage-status').textContent=status.storage==='drive'?'구글 드라이브에 저장됩니다':'원문과 단어은행을 보존합니다';
+  const value=$('bank').value;
+  $('bank').innerHTML='<option value="">단어장을 선택하세요</option>'+banks.map(b=>'<option value="'+esc(b.id)+'">'+esc(b.title||b.source?.filename||'단어장')+'</option>').join('');
+  if(banks.some(b=>b.id===value))$('bank').value=value;
+  $('generation-status').textContent=status.generation_available===false?'시험지 생성 기능을 사용할 수 없습니다. 잠시 후 다시 시도하세요.':(writingMode?'선택 범위의 단어와 문항 순서를 무작위로 정해 뜻 쓰기 시험지를 만듭니다.':'등록한 단어장의 뜻으로 시험지를 자동 생성합니다.');
+  if(currentBank&&currentBank.id===$('bank').value){
+    const summary=banks.find(bank=>bank.id===currentBank.id);
+    if(force||summary?.version!==currentBank.version){
+      const bankId=currentBank.id,epoch=bankEpoch,updated=await request('/banks/'+bankId,{forceBank:force});
+      if(serial===bankRefreshSerial&&epoch===bankEpoch&&currentBank?.id===bankId&&$('bank').value===bankId){
+        if(currentBank.version!==updated.version)homeChanged();
+        currentBank=updated;renderScopeControls(true);updateBankCounts();renderReview();showBankDriveLinks();
+      }
+    }
+  }else if(currentBank){currentBank=null;renderScopeControls();updateBankCounts();renderReview();showBankDriveLinks();}
+  return{banks,status};
+}
+async function refreshJobs(){const jobs=(await request('/jobs')).filter(job=>job.kind==='import'||(job.worksheet_kind||'word_meaning_test')===FEATURE_KIND);reconcileIntents(jobs);renderJobs(jobs);autoResumeJobs(jobs);return jobs;}
+$('jobs-panel').addEventListener('toggle',()=>{if($('jobs-panel').open)refreshJobs().catch(error=>message(error.message,true));});
+async function refresh(force=false){
+  const bankResult=await refreshBanks(force);
+  const [listResult,jobs]=await Promise.all([refreshWorksheetLists(),force||$('jobs-panel').open?refreshJobs():Promise.resolve(null)]);return{...bankResult,...listResult,jobs};
+}
+function worksheetDeleted(id){
+  worksheetRows=worksheetRows.filter(item=>item.id!==id);renderWorksheetList();
+  if(currentWorksheet?.id===id){currentWorksheet=null;dirty=false;showHome();}
+}
+$('wm-worksheet-sort').onchange=()=>{meaningSortKey=$('wm-worksheet-sort').value;renderWorksheetList();};
+$('wm-worksheet-direction').onclick=()=>{meaningSortDirection=meaningSortDirection==='desc'?'asc':'desc';window.MelodyWorksheetList.direction($('wm-worksheet-direction'),meaningSortDirection);renderWorksheetList();};
+function canDeleteBank(bankId){
+  if(entryBusy)return{allowed:false,message:'단어장 저장 작업이 끝난 뒤 삭제해 주세요.'};
+  if([...entryDrafts.keys()].some(key=>key.startsWith(bankId+':')))return{allowed:false,message:'단어장에 저장하지 않은 수정이 있습니다. 수정한 어휘를 등록한 뒤 삭제해 주세요.'};
+  return{allowed:true};
+}
+async function bankDeleted(bankId){
+  bankRefreshSerial++;
+  const selected=$('bank').value===bankId||currentBank?.id===bankId;
+  for(const option of [...$('bank').options])if(option.value===bankId)option.remove();
+  if(selected){
+    bankEpoch++;currentBank=null;$('bank').value='';$('title').value='';
+    renderScopeControls();updateBankCounts();updatePending();renderReview();showBankDriveLinks();homeChanged();
+  }
+  return refreshBanks();
+}
+async function bankRenamed(bank){
+  // A save already applied this version in its originating frame. Do not
+  // clear its completion notification when the parent echoes the update.
+  if(currentBank?.id===bank.id&&currentBank.version>=bank.version)return;
+  bankRefreshSerial++;
+  const option=[...$('bank').options].find(item=>item.value===bank.id);if(option)option.textContent=bank.title;
+  if($('bank').value===bank.id){
+    const defaultTitle=currentBank?currentBank.title+' '+featureLabel:'';
+    const updateTitle=!$('title').value||$('title').value===defaultTitle;
+    bankEpoch++;currentBank=bank;
+    if(updateTitle)$('title').value=bank.title+' '+featureLabel;
+    renderScopeControls(true);updateBankCounts();updatePending();renderReview();showBankDriveLinks();homeChanged();
+  }
+  return refreshBanks();
+}
+function updateBankCounts(){
+  $('bank-counts').textContent=currentBank?'원본 '+currentBank.counts.total+'개 · 등록 '+currentBank.counts.ready+'개 · 확인 필요 '+currentBank.counts.review+'개':'';
+}
+async function selectBank(){
+  clearMessage();
+  const id=$('bank').value,epoch=++bankEpoch;
+  currentBank=null;renderScopeControls();updateBankCounts();renderReview();showBankDriveLinks();
+  $('title').value='';
+  const bank=id?await request('/banks/'+id):null;
+  if(epoch!==bankEpoch||$('bank').value!==id)return;
+  currentBank=bank;
+  renderScopeControls();
+  $('title').value=currentBank?currentBank.title+' '+featureLabel:'';
+  $('selection-preview').classList.add('hidden');
+  updateBankCounts();updatePending();renderReview();showBankDriveLinks();
+}
+function scopeUnits(){
+  return [...(currentBank?.units||[])].sort((a,b)=>(a.order??0)-(b.order??0));
+}
+function selectedUnitIds(strict=false){
+  const units=scopeUnits();
+  if(scopeMode==='selection'){
+    const checked=new Set([...$('units').querySelectorAll('input:checked')].map(input=>input.value));
+    const ids=units.filter(unit=>checked.has(unit.id)).map(unit=>unit.id);
+    if(strict&&!ids.length)throw fieldError('출제할 챕터를 선택하세요.','scope');
+    return ids;
+  }
+  const prefix=scopeMode==='bulk'?'bulk':'range';
+  const start=units.findIndex(unit=>unit.id===$(prefix+'-start').value);
+  const end=units.findIndex(unit=>unit.id===$(prefix+'-end').value);
+  if(start<0||end<0){
+    if(strict)throw fieldError('시작 챕터와 끝 챕터를 모두 선택하세요.','scope');
+    return [];
+  }
+  if(start>end){
+    if(strict)throw fieldError('끝 챕터는 시작 챕터와 같거나 뒤에 있어야 합니다.','scope');
+    return [];
+  }
+  return units.slice(start,end+1).map(unit=>unit.id);
+}
+function renderScopeControls(preserve=false){
+  const checked=new Set(preserve?[...$('units').querySelectorAll('input:checked')].map(input=>input.value):[]);
+  const start=preserve?$('range-start').value:'',end=preserve?$('range-end').value:'';
+  const bulkStart=preserve?$('bulk-start').value:'',bulkEnd=preserve?$('bulk-end').value:'';
+  const units=scopeUnits();
+  const options=units.map(unit=>'<option value="'+esc(unit.id)+'">'+esc(displayScope(unit.label))+'</option>').join('');
+  for(const [id,label,value] of [['range-start','시작 챕터 선택',start],['range-end','끝 챕터 선택',end],['bulk-start','시작 챕터 선택',bulkStart],['bulk-end','끝 챕터 선택',bulkEnd]]){
+    $(id).innerHTML='<option value="">'+label+'</option>'+options;
+    $(id).value=units.some(unit=>unit.id===value)?value:'';
+    $(id).disabled=!units.length;
+  }
+  $('units').innerHTML=units.map(unit=>'<label class="unit"><input type="checkbox" value="'+esc(unit.id)+'"'+(checked.has(unit.id)?' checked':'')+'><span>'+esc(displayScope(unit.label))+'</span></label>').join('');
+  const removed=[...checked,start,end,bulkStart,bulkEnd].some(id=>id&&!units.some(unit=>unit.id===id));
+  updateScope(!preserve||removed);
+}
+function setScopeMode(mode){
+  if(!['range','selection','bulk'].includes(mode)||mode===scopeMode)return;
+  scopeMode=mode;updateScope();
+}
+function updateScope(invalidate=true){
+  const range=scopeMode==='range',bulk=scopeMode==='bulk',units=scopeUnits(),selected=selectedUnitIds();
+  for(const mode of ['range','selection','bulk']){
+    $('scope-mode-'+mode).setAttribute('aria-pressed',String(scopeMode===mode));
+    $('scope-'+mode).hidden=scopeMode!==mode;
+  }
+  const prefix=bulk?'bulk':'range';
+  const start=units.findIndex(unit=>unit.id===$(prefix+'-start').value);
+  const end=units.findIndex(unit=>unit.id===$(prefix+'-end').value);
+  const reversed=(range||bulk)&&start>=0&&end>=0&&start>end;
+  for(const name of ['range','bulk'])$(name+'-end').setAttribute('aria-invalid',String(prefix===name&&reversed));
+  $('scope-summary').dataset.tone=reversed?'danger':'neutral';
+  $('scope-summary').textContent=!currentBank?'단어장을 선택하면 출제 범위를 지정할 수 있습니다.'
+    :!units.length?'이 단어장에는 선택할 챕터가 없습니다.'
+    :reversed?'끝 챕터는 시작 챕터와 같거나 뒤에 있어야 합니다.'
+    :bulk?(selected.length?displayScope(units[start].label)+(start===end?'':' ~ '+displayScope(units[end].label))+' · 챕터별 1부씩, 총 '+selected.length+'부 생성':'시작 챕터와 끝 챕터를 선택하면 챕터마다 시험지를 1부씩 만듭니다.')
+    :range?(selected.length?displayScope(units[start].label)+(start===end?'':' ~ '+displayScope(units[end].label))+' · '+selected.length+'개 챕터 선택':'시작 챕터부터 끝 챕터까지 모두 포함합니다.')
+    :selected.length+'개 챕터 선택 · 출제할 챕터를 직접 선택하세요.';
+  $('selection').innerHTML=uiIcon('preview')+' '+(bulk?'범위별 문항 수 확인':'출제 단어 확인');
+  $('generate').innerHTML=uiIcon('worksheet-create')+' '+(bulk?'시험지 일괄 생성':'시험지 생성');
+  renderBulkPlan();
+  updatePending();if(invalidate)homeChanged();queueEmbeddedLayout();
+}
+function bulkRows(){
+  if(scopeMode!=='bulk'||!currentBank)return [];
+  const selected=new Set(selectedUnitIds()),all=$('count-mode').value==='all',requested=Number($('count').value);
+  return scopeUnits().filter(unit=>selected.has(unit.id)).map(unit=>{
+    const words=new Set(currentBank.entries.filter(entry=>entry.unit_id===unit.id&&entry.status==='ready').map(entry=>String(entry.word||'').normalize('NFC').trim().replace(/\s+/g,' ')).filter(Boolean));
+    return{unit_ids:[unit.id],label:unit.label,available:words.size,count:all?words.size:Number.isInteger(requested)&&requested>0?Math.min(requested,words.size):null};
+  });
+}
+function renderBulkPlan(rows=bulkRows()){
+  const panel=$('bulk-plan');
+  panel.classList.toggle('hidden',scopeMode!=='bulk'||!rows.length);
+  if(scopeMode!=='bulk'||!rows.length){panel.innerHTML='';return;}
+  const total=rows.reduce((sum,row)=>sum+(row.count||0),0),valid=rows.every(row=>Number.isInteger(row.count)&&row.count>0);
+  panel.innerHTML='<p class="wm-bulk-summary"><strong>생성할 시험지 '+rows.length+'부</strong><span class="me-help">'+(valid?'총 '+total+'문항':'출제 가능한 단어와 문항 수를 확인하세요.')+'</span></p><div class="wm-bulk-table-wrap"><table class="wm-bulk-table"><caption class="me-visually-hidden">챕터별 생성 계획</caption><thead><tr><th scope="col">챕터</th><th scope="col">출제 가능한 단어</th><th scope="col">생성 문항</th></tr></thead><tbody>'+rows.map(row=>'<tr><th scope="row">'+esc(displayScope(row.label))+'</th><td>'+row.available+'개</td><td>'+(row.count===null?'—':row.count>0?row.count+'문항':'출제할 단어 없음')+'</td></tr>').join('')+'</tbody></table></div><p class="me-help wm-bulk-footnote">같은 영단어는 챕터 안에서 중복 통합합니다. 지정 문항 수가 부족한 챕터는 가능한 단어 수만큼 생성합니다.</p>';
+  queueEmbeddedLayout();
+}
+function scopeReviewKey(){return JSON.stringify([currentBank?.id,currentBank?.version,scopeMode,selectedUnitIds()]);}
+function pendingReviewState(){
+  const selected=selectedUnitIds();
+  let count=currentBank?currentBank.entries.filter(e=>selected.includes(e.unit_id)&&e.status==='review').length:0;
+  let pages=currentBank?.page_issues?.length||0;
+  if(scopeReviewError?.key!==scopeReviewKey())scopeReviewError=null;
+  if(scopeReviewError){
+    if(Number.isInteger(scopeReviewError.count))count=scopeReviewError.count;
+    if(Number.isInteger(scopeReviewError.pages))pages=scopeReviewError.pages;
+  }
+  return{count,pages,required:Boolean(count||pages||scopeReviewError),pageRequired:Boolean(pages||scopeReviewError?.code==='page_review_required')};
+}
+function updatePending(){
+  const {count,pages,required,pageRequired}=pendingReviewState(),partial=$('partial').checked;
+  const notice=$('pending-notice');
+  notice.classList.toggle('hidden',!currentBank||(!required&&!partial));
+  notice.dataset.excluded=String(partial);
+  $('pending-icon').innerHTML=uiIcon(partial?'check':'warning');
+  $('pending-title').textContent=count?'확인이 필요한 항목 '+count+'개'+(pages?' · 페이지 '+pages+'건':'')
+    :pageRequired?'확인이 필요한 페이지'+(pages?' '+pages+'건':'') :required?'확인이 필요한 항목이 있습니다':'확인 대기 항목 제외 설정';
+  $('pending-description').textContent=partial
+    ?(count?'확인 대기 '+count+'개를 제외하고 출제합니다. ':'')+(pageRequired?'페이지 확인을 건너뛰고 등록된 항목만 출제합니다.':count?'등록된 항목만 사용합니다.':required?'확인 대기 항목을 제외하고 등록된 항목만 출제합니다.':'현재 선택 범위에는 확인 대기 항목이 없습니다.')
+    :pageRequired?'원본 페이지를 확인한 뒤 출제하거나, 아래 옵션으로 등록된 항목만 출제하세요.':'항목을 확인한 뒤 출제하거나, 아래 옵션으로 확인 대기 항목을 제외하세요.';
+  queueEmbeddedLayout();
+}
+function showScopeReviewError(error,context){
+  if(!['review_required','page_review_required'].includes(error.code))return false;
+  // A response from an earlier scope or a screen that was left must not move focus.
+  if(!sameViewContext(context)||!currentBank||$('home-view').classList.contains('hidden')||(embedded&&window.frameElement?.closest?.('[hidden]')))return true;
+  const details=error.details||{};
+  scopeReviewError={key:scopeReviewKey(),code:error.code};
+  if(scopeMode!=='bulk'&&error.code==='review_required'&&Number.isInteger(details.review_count)&&details.review_count>=0)scopeReviewError.count=details.review_count;
+  if(error.code==='page_review_required'&&Array.isArray(details.page_issues))scopeReviewError.pages=details.page_issues.length;
+  updatePending();
+  const notice=$('pending-notice');
+  notice.dataset.blocked='true';
+  notice.focus?.({preventScroll:true});
+  notice.scrollIntoView?.({block:'center',behavior:'smooth'});
+  return true;
+}
+function draftKey(bankId,entryId){return bankId+':'+entryId;}
+function renderReview(){
+  const rows=currentBank?.entries.filter(e=>e.status==='review')||[];
+  $('review-panel').classList.toggle('hidden',!rows.length);
+  const hint=rows.length>100?'<p class="meta me-help">확인 대기 항목 중 처음 100개를 표시합니다. 등록하면 다음 항목이 이어서 표시됩니다.</p>':'';
+  $('review-entries').innerHTML=hint+rows.slice(0,100).map(e=>{
+    const draft=entryDrafts.get(draftKey(currentBank.id,e.id))||e;
+    const rawWord=e.word_raw??e.original_word??e.word;
+    const image=e.source.page?'<img loading="lazy" class="source-image" src="'+API+'/banks/'+currentBank.id+'/entries/'+e.id+'/image" alt="원본 '+e.source.page+'쪽 '+e.source_number+'번 부분 이미지"><p><a href="'+API+'/banks/'+currentBank.id+'/source" target="_blank" rel="noopener">전체 원본 열기</a></p>':'';
+    return '<div class="entry" data-id="'+esc(e.id)+'"><label class="field me-field me-label">영단어<input class="entry-word me-input" value="'+esc(draft.word)+'"></label><label class="field me-field me-label">뜻<textarea class="entry-meaning me-input">'+esc(draft.meaning)+'</textarea></label><button class="me-button save-entry" data-variant="edit" data-size="md">등록</button><div class="meta me-help">'+esc(currentBank.units.find(u=>u.id===e.unit_id)?.label)+' · '+esc(e.source_number)+'번 · '+esc(window.ExamContracts.reviewText(e.issues))+'<details><summary>원문과 출처 보기</summary><p>영단어: '+esc(rawWord).replace(/\n/g,'<br>')+'<br>뜻: '+esc(e.meaning_raw).replace(/\n/g,'<br>')+'</p>'+image+'</details></div></div>';
+  }).join('');
+}
+function selectionBody(){
+  if(!currentBank||currentBank.id!==$('bank').value)throw fieldError('단어장을 선택하세요.','bank');
+  const unit_ids=selectedUnitIds(true);
+  const count=$('count-mode').value==='all'?null:Number($('count').value);
+  if(count!==null&&(!Number.isInteger(count)||count<1))throw fieldError('문항 수를 확인해 주세요.','count');
+  return{bank_id:currentBank.id,unit_ids,count,shuffle:writingMode?true:$('shuffle').checked,allow_partial:$('partial').checked,title:$('title').value||null,model_options:currentModelOptions(),...(writingMode?{worksheet_kind:FEATURE_KIND}:{})};
+}
+function bulkBody(){
+  const {unit_ids,...body}=selectionBody();
+  return{...body,ranges:unit_ids.map(id=>[id])};
+}
+function progressText(job){
+  const preparing=job.kind==='import'&&job.registration_status==='complete'&&['queued','running'].includes(job.status);
+  const p=job.progress||{},parts=[preparing?'기존 어휘 시험용 학습자료를 준비 중입니다.':job.message||(['queued','running'].includes(job.status)?'처리 대기':'')];
+  if(p.message)parts.push(p.message);
+  if(p.page!=null&&(p.page_count??p.total)!=null)parts.push(p.page+'/'+(p.page_count??p.total)+(job.kind==='import'?'쪽':'개')+' 처리');
+  else if(p.completed!=null&&p.total!=null)parts.push(p.completed+'/'+p.total+(job.kind==='import'?'개':'문항'));
+  if(p.entries!=null)parts.push('추출 '+p.entries+'개');
+  if(job.recovery?.active&&job.recovery.attempt)parts.push('자동 재시도 '+job.recovery.attempt+'회');
+  const wait=importRecoveryDelay(job);if(wait>0)parts.push(Math.ceil(wait/1000)+'초 후 계속합니다');
+  const text=parts.filter(Boolean).join(' · '),clock=jobElapsedStates.get(job.id);
+  return clock&&['queued','running'].includes(job.status)?elapsedText(text,clock.started):text;
+}
+function paintJobProgress(job,target){
+  const row=[...$('jobs').querySelectorAll('[data-job-id]')].find(el=>el.dataset.jobId===job.id);
+  const detail=row?.querySelector('.meta');if(detail){detail.textContent=progressText(job);detail.dataset.tone=['failed','interrupted'].includes(job.status)?'danger':'neutral';}
+  const context=jobViewContexts.get(job.id);
+  if(context&&!sameViewContext(context)){clearJobProgress(job.id);return;}
+  if(progressOwners.get(target)===job.id)$(target).textContent=progressText(job);
+}
+function showJobProgress(job,target){
+  observeImportRegistration(job);
+  jobMonitorErrors.delete(job.id);
+  syncJobDismissal(job);
+  if(dismissedJobMessages.has(job.id)){clearJobProgress(job.id);return;}
+  const clock=jobElapsedStates.get(job.id);if(clock)clock.job=job;
+  if(job.kind==='import'){
+    const previous=latestJobs.find(item=>item.id===job.id);
+    if(!previous)renderJobs([...latestJobs,job]);
+    else{latestJobs=latestJobs.map(item=>item.id===job.id?job:item);if(!['queued','running'].includes(job.status))renderJobs();}
+  }
+  paintJobProgress(job,target);
+}
+function clearJobProgress(id){
+  for(const [target,owner] of progressOwners){
+    if(owner!==id)continue;
+    progressOwners.delete(target);$(target).textContent='';$(target).classList.add('hidden');
+  }
+}
+async function deleteJobMessage(button){
+  const id=button.dataset.id;
+  const result=await request('/jobs/'+id+'/message',{method:'DELETE'});
+  if(result.dismissed_at){
+    jobDismissalTimes.set(id,result.dismissed_at);
+    latestJobs=latestJobs.map(job=>job.id===id?{...job,dismissed_at:result.dismissed_at}:job);
+  }
+  dismissedJobMessages.add(id);clearJobProgress(id);
+  const row=button.closest('[data-job-id]');row?.remove();
+  $('jobs-panel').hidden=!$('jobs').querySelector('[data-job-id]');
+  queueEmbeddedLayout();
+}
+function syncJobDismissal(job){
+  const attention=Date.parse(job.attention_at||''),server=Date.parse(job.dismissed_at||''),local=Date.parse(jobDismissalTimes.get(job.id)||'');
+  const dismissed=Math.max(Number.isFinite(server)?server:-Infinity,Number.isFinite(local)?local:-Infinity);
+  if(Number.isFinite(attention)&&attention>dismissed)dismissedJobMessages.delete(job.id);
+  else if(job.dismissed_at||jobDismissalTimes.has(job.id))dismissedJobMessages.add(job.id);
+}
+function renderJobs(jobs=latestJobs){
+  latestJobs=jobs;
+  jobs.forEach(syncJobDismissal);
+  const visible=jobs.filter(j=>!dismissedJobMessages.has(j.id)&&['queued','running','failed','interrupted'].includes(j.status));
+  $('jobs-panel').hidden=!visible.length;
+  $('jobs').innerHTML=visible.map(j=>{
+    const running=['queued','running'].includes(j.status),monitorError=jobMonitorErrors.get(j.id);
+    const text=monitorError||progressText(j),tone=monitorError||['failed','interrupted'].includes(j.status)?'danger':'neutral';
+    return '<div class="list-item" data-job-id="'+esc(j.id)+'"><div><b>'+(j.kind==='import'?'단어장 등록':'시험지 생성')+(j.bulk_label?' · '+esc(displayScope(j.bulk_label)):'')+'</b><div class="meta me-help" data-tone="'+tone+'">'+esc(text)+'</div></div><div class="list-acts"><button class="me-button '+(running?'follow-job':'retry-job')+'" data-variant="secondary" data-size="sm" data-id="'+esc(j.id)+'" data-kind="'+esc(j.kind)+'">'+(running?'진행 확인':'재시도')+'</button><button class="me-button delete-job" data-variant="danger" data-size="sm" data-id="'+esc(j.id)+'" aria-label="작업 메시지 삭제" title="이 작업 메시지 삭제">삭제</button></div></div>';
+  }).join('')||'<div class="meta me-help">진행 중이거나 중단된 작업이 없습니다.</div>';
+  queueEmbeddedLayout();
+}
+function recordJobError(id,error,target){
+  jobMonitorErrors.set(id,error.message);
+  if(!latestJobs.some(j=>j.id===id))latestJobs=[...latestJobs,error.job||{id,kind:target==='import-progress'?'import':'generate',status:'running'}];
+  renderJobs();
+  const context=jobViewContexts.get(id);
+  if(context&&progressOwners.get(target)===id&&sameViewContext(context)&&!$('home-view').classList.contains('hidden'))$('jobs-panel').open=true;
+}
+function pollJob(id,target,{foreground=true,started=performance.now(),owner=null,context=captureViewContext()}={}){
+  if(foreground&&(!owner||progressOwners.get(target)===owner)&&sameViewContext(context)){jobViewContexts.set(id,context);progressOwners.set(target,id);feedback($(target),elapsedText('처리 상태를 확인하고 있습니다.',jobElapsedStates.get(id)?.started??started),'neutral');}
+  if(pollingJobs.has(id))return pollingJobs.get(id);
+  const parentMonitor=parentImportMonitor(id);
+  if(parentMonitor)started=performance.now()-Math.max(0,Date.now()-parentMonitor.startedAt);
+  const clock={started,job:parentMonitor?.job||{id,status:'running',message:'처리 상태를 확인하고 있습니다.'}};
+  const tick=()=>{if(parentMonitor?.job)clock.job=parentMonitor.job;if(!dismissedJobMessages.has(id))paintJobProgress(clock.job,target);};
+  jobElapsedStates.set(id,clock);const timer=setInterval(tick,1000);
+  const task=parentMonitor?parentMonitor.promise.then(job=>{showJobProgress(job,target);return job;}):(async()=>{
+    let stepBusy=false,stepError=null,nextStepAt=0,nextJob=null,transportFailures=0,observed=null;
+    for(;;){
+      if((observed?.kind==='import'||target==='import-progress')&&!importPageVisible()){await importWait(3000);continue;}
+      let job;
+      try{job=nextJob||await request('/jobs/'+id);nextJob=null;}
+      catch(error){
+        if((observed?.kind==='import'||target==='import-progress')&&importTransient(error)){
+          transportFailures++;showJobProgress({...observed,id,kind:'import',status:'running',message:'연결을 다시 확인하고 있습니다. 저장된 작업을 이어갑니다.',recovery:{active:false}},target);
+          await importWait(Math.min(15000,1000*2**Math.min(transportFailures-1,4)));continue;
+        }
+        throw error;
+      }
+      observed=job;reconcileIntents([job]);
+      if(job.kind==='import'){
+        const serverStarted=Date.parse(job.started_at||job.created_at||'');
+        if(Number.isFinite(serverStarted)&&serverStarted<=Date.now())clock.started=Math.min(clock.started,performance.now()-(Date.now()-serverStarted));
+      }
+      showJobProgress(job,target);
+      if(job.status==='complete'){if(job.kind==='import'){clearImportActivity(id);window.MelodyBankData?.invalidate();refreshBanks(true).catch(()=>{});}refreshWorksheetLists().catch(error=>message(error.message,true));return job;}
+      if(['failed','interrupted'].includes(job.status)){if(job.kind==='import')clearImportActivity(id);refreshWorksheetLists().catch(()=>{});throw Object.assign(Error(job.message),{job});}
+      if(stepError){refreshWorksheetLists().catch(()=>{});throw stepError;}
+      const recoveryWait=job.kind==='import'?importRecoveryDelay(job):0;
+      if(recoveryWait>0){await importWait(Math.min(recoveryWait,5000));continue;}
+      if(job.kind==='import'&&job.engine_version===2){await importWait(3000);continue;}
+      if(requestWorkMode()&&['generate','regenerate','import'].includes(job.kind)){
+        // The durable step response already contains the current job. Avoid
+        // repeatedly downloading its bank snapshot while that step is running.
+        const finishing=job.progress?.total>0&&job.progress.completed>=job.progress.total;
+        showJobProgress({...job,status:'running',message:job.kind==='import'?workingImportMessage(job):finishing?'생성 결과를 저장하고 있습니다.':job.kind==='regenerate'?'문항을 다시 생성하고 있습니다.':'시험지 문항을 생성하고 있습니다.'},target);
+        try{nextJob=await request('/jobs/'+id+'/step',{method:'POST'});transportFailures=0;}
+        catch(error){
+          if(job.kind==='import'&&importTransient(error)){
+            transportFailures++;
+            showJobProgress({...job,status:'running',message:error.status===409?'진행 중인 작업의 결과를 확인하고 있습니다.':'연결을 다시 확인하고 있습니다. 저장된 작업을 이어갑니다.',recovery:{active:false}},target);
+            await importWait(Math.min(15000,(error.status===409?2000:1000)*2**Math.min(transportFailures-1,4)));continue;
+          }
+          if(error.status===409){await new Promise(resolve=>setTimeout(resolve,5000));continue;}
+          stepError=error;
+        }
+        if(nextJob)continue;
+        await new Promise(resolve=>setTimeout(resolve,1200));continue;
+      }
+      if(requestWorkMode()&&!stepBusy&&Date.now()>=nextStepAt){
+        stepBusy=true;
+        request('/jobs/'+id+'/step',{method:'POST'}).catch(error=>{
+          if(error.status===409)nextStepAt=Date.now()+5000;
+          else stepError=error;
+        }).finally(()=>{stepBusy=false;});
+      }
+      await new Promise(resolve=>setTimeout(resolve,1200));
+    }
+  })();
+  const monitored=task.catch(error=>{recordJobError(id,error,target);error.jobId=id;throw error;}).finally(()=>{
+    clearInterval(timer);jobElapsedStates.delete(id);clearJobProgress(id);jobViewContexts.delete(id);pollingJobs.delete(id);queueEmbeddedLayout();
+  });
+  pollingJobs.set(id,monitored);return monitored;
+}
+async function generateBulk(context){
+  const payload=bulkBody(),intent=intentFor('bulk',JSON.stringify(payload));
+  const target='generation-progress',owner='bulk:'+intent.request_id;
+  const activity=startTaskProgress(target,'다중 작업 시험지를 생성할 준비를 하고 있습니다.',context,{owner});
+  try{
+  const result=intent.job_ids?.length?{job_ids:intent.job_ids,ranges:intent.ranges,batch_id:intent.batch_id}:await request('/generate-bulk',json('POST',{...payload,request_id:intent.request_id}));
+  rememberBulkIntent(intent,result);
+  if(sameViewContext(context))renderBulkPlan(result.ranges);
+  const total=result.job_ids.length;
+  let completed=0,attention=0;
+  function update(){
+    if(progressOwners.get(target)!==owner||!sameViewContext(context))return;
+    activity.update('다중 작업 · '+total+'부 중 '+completed+'부 완료'+(attention?' · 확인할 작업 '+attention+'개':'')+' · 챕터별 시험지를 생성하고 있습니다.');
+  }
+  update();
+    const settled=await Promise.allSettled(result.job_ids.map(async id=>{
+      try{const job=await pollJob(id,target,{foreground:false,started:activity.started});completed++;update();return job;}
+      catch(error){attention++;update();throw error;}
+    }));
+    const observed=settled.every(item=>item.status==='fulfilled'||['failed','interrupted'].includes(item.reason?.job?.status));
+    if(observed)clearIntent(intent);
+    if(sameViewContext(context))feedback($('generation-feedback'),attention
+      ?'총 '+total+'부 중 '+completed+'부를 생성했습니다. 나머지 '+attention+'개 작업은 아래 ‘작업 진행과 재시도’에서 확인하세요.'
+      :total+'부의 시험지를 생성했습니다. 만들어진 시험지에서 챕터별 문제지와 정답지를 확인하세요.',attention?'neutral':'success');
+  }finally{
+    activity.stop();
+    queueEmbeddedLayout();
+  }
+}
+async function openWorksheet(id){
+  if(editorBusy||entryBusy)return false;
+  if(!await leaveEditor())return false;
+  stopPdfPreview();
+  const epoch=++editorEpoch,revision=inputRevision;let worksheet;
+  try{worksheet=await request('/worksheets/'+id);}
+  catch(error){showWorksheetLoadError(error,epoch);return false;}
+  if(!acceptWorksheetLoad(epoch,revision))return false;
+  currentWorksheet=worksheet;dirty=false;inputRevision++;
+  clearDocumentFeedback();
+  $('home-view').classList.add('hidden');$('preview-view').classList.add('hidden');$('editor-view').classList.remove('hidden');
+  renderEditor();queueEmbeddedLayout();window.scrollTo(0,0);
+  return true;
+}
+function showWorksheetLoadError(error,epoch){
+  if(epoch!==editorEpoch)return;
+  const text=error.message||'시험지를 불러오지 못했습니다. 다시 시도해 주세요.';
+  if($('home-view').classList.contains('hidden'))editorMessage(text,true);else message(text,true);
+}
+function acceptWorksheetLoad(epoch,revision){
+  if(epoch!==editorEpoch)return false;
+  if(revision===inputRevision)return true;
+  showWorksheetLoadError(Error('불러오는 동안 수정한 내용이 있습니다. 수정 내용을 저장한 뒤 다시 열어 주세요.'),epoch);
+  return false;
+}
+function renderEditor(){
+  $('editor-heading').textContent=currentWorksheet.title;
+  $('editor-meta').textContent=displayScope(currentWorksheet.range_label)+' · 문항 '+currentWorksheet.questions.length+'개';
+  $('edit-title').value=currentWorksheet.title;
+  $('questions').innerHTML=currentWorksheet.questions.map((q,i)=>{
+    const reviewReasons=questionReviewReasons(q);
+    if(isWritingWorksheet())return writingQuestionRow(q,i,reviewReasons);
+    const candidates=q.candidates?.length?q.candidates:[{id:'candidate_1'}];
+    const active=q.active_candidate_id||'candidate_1',limit=candidates.length>=10,timer=regenerationStates.get(q.id);
+    const buttons=candidates.map((c,index)=>'<button class="me-icon-button candidate '+(c.id===active?'active':'')+'" data-size="compact" data-variant="secondary" data-candidate="'+esc(c.id)+'" title="문항 후보 '+(index+1)+'" aria-label="문항 후보 '+(index+1)+(c.id===active?' 선택됨':'')+'" aria-pressed="'+(c.id===active)+'">'+(index+1)+'</button>').join('');
+    const choices=q.choices.map(c=>choiceRow(c,q.correct_choice_ids.includes(c.id))).join('');
+    return '<section class="question" data-id="'+esc(q.id)+'"><div class="question-toolbar"><span class="number">'+(i+1)+'</span><input class="question-word me-input" type="text" value="'+esc(q.word)+'" aria-label="'+(i+1)+'번 영단어"><span class="question-review me-badge'+(reviewReasons.length?'':' hidden')+'" data-tone="warning" title="'+esc(reviewReasons.join(' '))+'">'+(reviewReasons.length?'수정 필요':'')+'</span><button class="me-icon-button regenerate" data-variant="edit" data-size="compact" data-keep-disabled="'+limit+'" '+(limit?'disabled':'')+' title="'+(limit?'더 이상 생성할 수 없습니다.':'해당 문항을 새로 생성합니다.')+'" aria-label="'+(i+1)+'번 문항 새로 생성"><svg class="me-icon" data-size="16" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/design-system/icons.svg#me-icon-refresh"></use></svg></button></div><div class="candidate-row"><span class="regeneration-elapsed meta me-help" role="timer" aria-live="off">'+(timer?Math.floor((performance.now()-timer.started)/1000)+'초 경과':'')+'</span><div class="candidate-buttons">'+buttons+'</div></div><div class="choices">'+choices+'</div><p class="question-feedback me-help hidden" role="status" aria-live="polite"></p><div class="choice-actions"><span class="choice-count meta me-help">답항 '+q.choices.length+'개</span> <button type="button" class="add-choice me-button" data-variant="secondary" data-size="sm">답항 추가</button></div><details><summary>출제 근거</summary><p class="meta me-help">'+esc(q.meaning_raw).replace(/\n/g,'<br>')+'</p></details></section>';
+  }).join('');
+  renderMiniPreview();showPdf();syncEditorLock();
+}
+function writingQuestionRow(q,index,reasons=[]){
+  const number=index+1;
+  return '<section class="question writing-question" data-id="'+esc(q.id)+'"><div class="question-toolbar"><span class="number">'+number+'</span><input class="question-word me-input" type="text" maxlength="300" value="'+esc(q.word)+'" aria-label="'+number+'번 영단어"><span class="question-review me-badge'+(reasons.length?'':' hidden')+'" data-tone="warning" title="'+esc(reasons.join(' '))+'">'+(reasons.length?'수정 필요':'')+'</span><button type="button" class="me-icon-button replace-word" data-variant="edit" data-size="compact" title="선택 범위에서 다른 단어로 교체" aria-label="'+number+'번 다른 단어로 교체">'+uiIcon('refresh')+'</button></div><label class="me-field writing-answer-field"><span>정답 뜻</span><textarea class="question-answer me-input" rows="3" maxlength="12000" aria-label="'+number+'번 정답 뜻">'+esc(q.answer_text)+'</textarea></label><p class="question-feedback me-help hidden" role="status" aria-live="polite"></p><details><summary>출제 근거</summary><p class="meta me-help">'+esc(q.original_answer_text??q.meaning_raw??q.source_meanings?.map(row=>row.meaning_raw).join('\n')??'').replace(/\n/g,'<br>')+'</p></details></section>';
+}
+function choiceRow(choice,correct=false){
+  return '<div class="choice me-check" style="grid-template-columns:20px minmax(0,1fr) auto"><input type="checkbox" data-choice="'+esc(choice.id)+'" '+(correct?'checked':'')+' aria-label="정답 선택"><textarea class="me-input" data-choice="'+esc(choice.id)+'" aria-label="뜻 답항">'+esc(choice.text)+'</textarea><button type="button" class="remove-choice me-icon-button" data-variant="danger" data-size="compact" aria-label="답항 삭제" title="답항 삭제">'+uiIcon('trash')+'</button></div>';
+}
+function questionReviewReasons(question){
+  if(isWritingWorksheet()){const reasons=[];if(!String(question.word||'').trim())reasons.push('영단어가 비어 있습니다.');if(!String(question.answer_text||'').trim())reasons.push('정답 뜻이 비어 있습니다.');return reasons;}
+  const reasons=[],choices=question.choices||[],correct=new Set(question.correct_choice_ids||[]);
+  if(!String(question.word||'').trim())reasons.push('영단어가 비어 있습니다.');
+  if(choices.length<2)reasons.push('답항은 최소 2개가 필요합니다.');
+  if(choices.some(choice=>!String(choice.text||'').trim()))reasons.push('비어 있는 답항이 있습니다.');
+  const texts=choices.map(choice=>String(choice.text||'').trim().replace(/\s+/g,' ').toLocaleLowerCase());
+  if(new Set(texts).size!==texts.length)reasons.push('같은 문구의 답항이 중복되어 있습니다.');
+  if(!choices.some(choice=>correct.has(choice.id)))reasons.push('정답을 하나 이상 선택해야 합니다.');
+  if([...correct].some(id=>!choices.some(choice=>choice.id===id)))reasons.push('정답이 삭제된 답항을 가리키고 있습니다.');
+  return reasons;
+}
+function updateQuestionReview(question){
+  const badge=question?.querySelector('.question-review');if(!badge)return;
+  const data={word:question.querySelector('.question-word').value,
+    ...(isWritingWorksheet()?{answer_text:question.querySelector('.question-answer').value}:{}),
+    choices:[...question.querySelectorAll('textarea[data-choice]')].map(input=>({id:input.dataset.choice,text:input.value})),
+    correct_choice_ids:[...question.querySelectorAll('input[data-choice]:checked')].map(input=>input.dataset.choice)};
+  const reasons=questionReviewReasons(data);
+  badge.textContent=reasons.length?'수정 필요':'';badge.title=reasons.join(' ');badge.classList.toggle('hidden',!reasons.length);
+}
+function changeChoice(question,button){
+  if(editorBusy||!currentWorksheet)return;
+  const list=question.querySelector('.choices');
+  if(button.matches('.add-choice')){
+    const id='choice_manual_'+crypto.randomUUID();
+    list.insertAdjacentHTML('beforeend',choiceRow({id,text:''}));
+    list.querySelector('textarea[data-choice="'+id+'"]').focus();
+  }else{
+    if(list.querySelectorAll('.choice').length<=2){questionMessage(question.dataset.id,'답항은 최소 2개가 필요합니다.',true);return;}
+    const row=button.closest('.choice'),next=row.nextElementSibling||row.previousElementSibling;
+    row.remove();next?.querySelector('textarea').focus();
+  }
+  question.querySelector('.choice-count').textContent='답항 '+list.querySelectorAll('.choice').length+'개';
+  changed(question);queueEmbeddedLayout();
+}
+function edits(){
+  if(isWritingWorksheet())return{version:currentWorksheet.version,title:$('edit-title').value,questions:[...$('questions').querySelectorAll('.question')].map(el=>({id:el.dataset.id,word:el.querySelector('.question-word').value,answer_text:el.querySelector('.question-answer').value}))};
+  return{version:currentWorksheet.version,title:$('edit-title').value,questions:[...$('questions').querySelectorAll('.question')].map(el=>({
+    id:el.dataset.id,word:el.querySelector('.question-word').value,
+    choices:[...el.querySelectorAll('textarea[data-choice]')].map(t=>({id:t.dataset.choice,text:t.value})),
+    correct_choice_ids:[...el.querySelectorAll('input[data-choice]:checked')].map(c=>c.dataset.choice)
+  }))};
+}
+async function saveEdits(context){
+  if(!sameEditor(context))return false;if(!dirty)return true;
+  const revision=inputRevision,payload=edits();
+  let updated;
+  try{updated=await request('/worksheets/'+context.id,json('PATCH',payload));}
+  catch(error){error.editorSave=true;throw error;}
+  return acceptWorksheet(context,updated,revision);
+}
+function finishLeave(choice){
+  if(!leaveDecision)return;
+  const decision=leaveDecision;leaveDecision=null;$('leave-dialog').close();decision.resolve(choice);
+}
+async function leaveEditor(){
+  if(editorBusy||entryBusy)return false;
+  if(!dirty)return true;
+  if(leaveDecision)return false;
+  const context={epoch:editorEpoch,id:currentWorksheet.id};
+  let choice;
+  if(embedded&&window.parent.MelodyUI?.confirmUnsaved){
+    leaveDecision={resolve:()=>{}};
+    try{choice=await window.parent.MelodyUI.confirmUnsaved({trigger:window.frameElement});}finally{leaveDecision=null;}
+  }else choice=await new Promise(resolve=>{leaveDecision={resolve};if(window.MelodyUI)window.MelodyUI.openDialog($('leave-dialog'));else $('leave-dialog').showModal();});
+  if(!sameEditor(context)||choice==='keep')return false;
+  if(choice==='discard'){dirty=false;inputRevision++;renderEditor();return true;}
+  return Boolean(await editorOperation(inner=>saveEdits(inner)));
+}
+function showPdf(){
+  const ready=currentWorksheet?.pdfs&&!currentWorksheet.pdfs_stale&&!dirty;
+  $('download').disabled=!ready||editorBusy;
+  showWorksheetDriveLinks();
+}
+function renderMiniPreview(){
+  if(!currentWorksheet)return;
+  const data=dirty?edits():currentWorksheet;
+  if(isWritingWorksheet()){renderWritingMiniPreview(data);return;}
+  $('wm-mini-paper').innerHTML='<h2>'+esc(data.title)+'</h2><p class="meta">'+esc(displayScope(currentWorksheet.range_label))+'</p><p>■ 주어진 어휘의 뜻을 모두 고르시오.</p>'+data.questions.map((q,i)=>'<section class="wm-mini-question"><b>'+(i+1)+'. '+esc(q.word)+'</b><div>'+q.choices.map((c,n)=>'<p>'+esc(n<20?String.fromCharCode(0x2460+n):'('+(n+1)+')')+' '+esc(c.text).replace(/\n/g,'<br>')+'</p>').join('')+'</div></section>').join('');
+}
+function renderWritingMiniPreview(data){
+  const n=data.questions.length,columns=[];
+  for(let offset=0;offset<n;offset+=30){
+    const page=data.questions.slice(offset,offset+30),split=Math.ceil(page.length/2);
+    columns.push('<div class="wm-writing-mini-columns">'+[page.slice(0,split),page.slice(split)].map((rows,column)=>'<table class="wm-writing-mini-table"><thead><tr><th>번호</th><th>단어</th><th>뜻</th></tr></thead><tbody>'+rows.map((q,index)=>'<tr><td>'+(offset+(column?split:0)+index+1)+'</td><td>'+esc(q.word)+'</td><td></td></tr>').join('')+'</tbody></table>').join('')+'</div>');
+  }
+  $('wm-mini-paper').innerHTML='<div class="wm-writing-mini-brand">melody english</div><h2>'+esc(data.title)+'</h2><p class="meta">'+esc(displayScope(currentWorksheet.range_label))+'</p><div class="wm-writing-mini-identification"><span>이름: <span class="wm-writing-mini-name-space" aria-hidden="true"></span></span><span>점수: <span class="wm-writing-mini-score-space" aria-hidden="true"></span> / '+n+'</span></div><p>주어진 어휘의 뜻을 쓰시오.</p>'+columns.join('');
+}
+function stopPdfPreview(){
+  previewSerial++;previewController?.abort();previewController=null;
+  previewRenderer?.destroy();previewRenderer=null;
+  const task=previewTask;previewTask=null;if(task)task.destroy().catch(()=>{});
+}
+async function openWorksheetPreview(id){
+  if(editorBusy||entryBusy||!await leaveEditor())return false;
+  stopPdfPreview();const epoch=++editorEpoch,revision=inputRevision;let worksheet;
+  try{worksheet=await request('/worksheets/'+id);}
+  catch(error){showWorksheetLoadError(error,epoch);return false;}
+  if(!acceptWorksheetLoad(epoch,revision))return false;
+  currentWorksheet=worksheet;dirty=false;inputRevision++;
+  clearDocumentFeedback();
+  $('home-view').classList.add('hidden');$('editor-view').classList.add('hidden');$('preview-view').classList.remove('hidden');
+  $('preview-heading').textContent=worksheet.title;showPdf();queueEmbeddedLayout();window.scrollTo(0,0);
+  await renderPreviewPdf();
+  return true;
+}
+async function renderPreviewPdf(){
+  stopPdfPreview();const token=previewSerial,worksheet=currentWorksheet,kind=$('pdf-kind').value||'student',pages=$('wm-pdf-pages');
+  $('pdf-retry').classList.add('hidden');pages.dataset.state='';
+  if(!worksheet||$('preview-view').classList.contains('hidden'))return;
+  if(!worksheet.pdfs||worksheet.pdfs_stale||dirty){pages.textContent='저장된 최신 PDF가 없습니다. PDF 재생성 버튼으로 만들어 주세요.';return;}
+  pages.textContent='PDF를 불러오는 중입니다…';
+  const controller=new AbortController();previewController=controller;
+  let task;
+  const failed=error=>{if(token===previewSerial&&error.name!=='AbortError'){previewRenderer?.destroy();previewRenderer=null;const loaded=previewTask;previewTask=null;loaded?.destroy().catch(()=>{});pages.textContent='PDF 미리보기를 불러오지 못했습니다. 다시 불러오기를 눌러 주세요.';pages.dataset.state='error';$('pdf-retry').classList.remove('hidden');}};
+  try{
+    const pdfjs=await loadPdfRenderer();if(token!==previewSerial)return;
+    pdfjs.GlobalWorkerOptions.workerSrc='/static/vendor/pdfjs/pdf.worker.min.mjs';
+    const response=await fetch(worksheet.pdfs[kind],{cache:'no-store',signal:networkSignal(90000,controller.signal)});
+    if(!response.ok)throw Error('PDF를 불러오지 못했습니다.');
+    const data=new Uint8Array(await response.arrayBuffer());if(token!==previewSerial)return;
+    task=pdfjs.getDocument({data,isEvalSupported:false});previewTask=task;
+    const pdf=await task.promise;if(token!==previewSerial)return;
+    previewRenderer=window.MelodyPdfPreview.create({pdf,pages,isCurrent:()=>token===previewSerial&&!$('preview-view').classList.contains('hidden'),onError:failed,onLayout:queueEmbeddedLayout});
+    await previewRenderer.render();
+  }catch(error){failed(error);}
+  finally{if(previewController===controller)previewController=null;}
+}
+function worksheetDownloadManager(){return embedded&&window.parent.MelodyWorksheetDownload||window.MelodyWorksheetDownload;}
+function downloadWorksheetPdf(id,kind='student',title='시험지',trigger){
+  if(!['student','answer','combined'].includes(kind))throw Error('다운로드 유형을 확인해 주세요.');
+  const worksheet=worksheetRows.find(item=>item.id===id)||(currentWorksheet?.id===id?currentWorksheet:{id,title});
+  if(worksheet.deletion_pending)return;
+  return worksheetDownloadManager().open({items:[{...worksheet,kind:writingMode?'meaning-writing':'word-meaning'}],pdfKind:kind,trigger});
+}
+
+function questionElement(id){return [...$('questions').querySelectorAll('.question')].find(el=>el.dataset.id===id);}
+async function replaceWritingWord(questionId){
+  if(editorBusy||!isWritingWorksheet()||!currentWorksheet?.questions.some(q=>q.id===questionId))return;
+  return editorOperation(async context=>{
+    if(dirty&&!await saveEdits(context))return;if(!sameEditor(context))return;
+    const revision=inputRevision,payload={version:currentWorksheet.version};
+    const intent=intentFor('replace',JSON.stringify({worksheet_id:context.id,question_id:questionId,...payload}));
+    try{
+      const updated=await request('/worksheets/'+context.id+'/questions/'+questionId+'/replace',json('POST',{...payload,request_id:intent.request_id}));
+      clearIntent(intent);
+      if(acceptWorksheet(context,updated,revision))questionMessage(questionId,'선택 범위의 다른 단어로 교체했습니다. PDF를 재생성하면 인쇄물에 반영됩니다.');
+    }catch(error){if(error.status&&error.status<500&&![408,425,429].includes(error.status))clearIntent(intent);throw error;}
+  },{questionId});
+}
+async function regenerateQuestion(questionId){
+  const question=currentWorksheet?.questions.find(q=>q.id===questionId);
+  if(editorBusy||!question)return;
+  if((question.candidates?.length||1)>=10){questionMessage(questionId,'더 이상 생성할 수 없습니다.',true);return;}
+  if(!window.confirm('해당 문항을 새로 생성합니다.'))return;
+  return editorOperation(async context=>{
+    if(dirty&&!await saveEdits(context))return;if(!sameEditor(context))return;
+    const revision=inputRevision,started=performance.now();regenerationStates.set(questionId,{started});
+    const tick=()=>{const el=questionElement(questionId)?.querySelector('.regeneration-elapsed');if(el)el.textContent=Math.floor((performance.now()-started)/1000)+'초 경과';};
+    tick();const timer=setInterval(tick,1000);
+    try{
+      const payload={version:currentWorksheet.version,model_options:currentModelOptions()};
+      const intent=intentFor('regenerate',JSON.stringify({worksheet_id:context.id,question_id:questionId,...payload}));
+      let updated=intent.job_id?{job_id:intent.job_id}:await request('/worksheets/'+context.id+'/questions/'+questionId+'/regenerate',json('POST',{...payload,request_id:intent.request_id}));
+      if(updated.job_id)rememberIntentJob(intent,updated.job_id);
+      if(updated.job_id){await pollJob(updated.job_id,'generation-progress');updated=await request('/worksheets/'+context.id);}
+      clearIntent(intent);
+      if(acceptWorksheet(context,updated,revision))questionMessage(questionId,'새 문항 후보를 생성하고 선택했습니다.');
+    }finally{
+      clearInterval(timer);regenerationStates.delete(questionId);
+      const el=questionElement(questionId)?.querySelector('.regeneration-elapsed');if(el)el.textContent='';
+    }
+  },{questionId});
+}
+async function chooseCandidate(questionId,candidateId){
+  const question=currentWorksheet?.questions.find(q=>q.id===questionId);
+  if(editorBusy||!question||candidateId===(question.active_candidate_id||'candidate_1'))return;
+  return editorOperation(async context=>{
+    if(dirty&&!await saveEdits(context))return;if(!sameEditor(context))return;
+    const revision=inputRevision;
+    const updated=await request('/worksheets/'+context.id+'/questions/'+questionId+'/candidate',json('POST',{version:currentWorksheet.version,candidate_id:candidateId}));
+    if(acceptWorksheet(context,updated,revision))questionMessage(questionId,'선택한 문항 후보를 불러왔습니다.');
+  },{questionId});
+}
+function entryLock(row){
+  const elements=[$('home'),$('legacy-home'),$('bank'),$('refresh'),$('upload'),$('generate'),$('selection'),...$('worksheets').querySelectorAll('button'),...$('review-entries').querySelectorAll('.save-entry'),...row.querySelectorAll('input,textarea')];
+  const states=elements.map(el=>[el,el.disabled]);elements.forEach(el=>el.disabled=true);
+  return()=>states.forEach(([el,disabled])=>{if(el.isConnected)el.disabled=disabled;});
+}
+async function saveEntry(button){
+  if(entryBusy||!currentBank)return;
+  const row=button.closest('.entry'),bankId=currentBank.id,entryId=row.dataset.id;
+  const values={word:row.querySelector('.entry-word').value,meaning:row.querySelector('.entry-meaning').value};
+  entryDrafts.set(draftKey(bankId,entryId),values);entryBusy=true;const unlock=entryLock(row),label=button.textContent,started=performance.now();
+  const tick=()=>{if(button.isConnected)button.textContent=elapsedText('등록 중…',started);};tick();const timer=setInterval(tick,1000);
+  try{
+    const bank=await request('/banks/'+bankId+'/entries/'+entryId,json('PATCH',{version:currentBank.version,...values,status:'ready'}));
+    entryDrafts.delete(draftKey(bankId,entryId));
+    if(currentBank?.id===bankId){currentBank=bank;renderReview();updatePending();updateBankCounts();renderBulkPlan();}
+    if(currentBank?.id===bankId){
+      if(embedded)window.parent.dispatchEvent(new CustomEvent('melody-bank-updated',{detail:bank}));
+      message('어휘를 확인하고 등록했습니다.');
+    }
+  }catch(e){
+    let target=row.querySelector('.entry-feedback');
+    if(!target){target=document.createElement('p');target.className='entry-feedback wm-local-feedback';target.setAttribute('role','alert');row.append(target);}
+    feedback(target,e.message,'danger');
+  }
+  finally{clearInterval(timer);if(button.isConnected)button.textContent=label;unlock();entryBusy=false;}
+}
+async function followJob(button,retry=false){
+  const context=captureViewContext();
+  let id=button.dataset.id;
+  if(retry)id=(await request('/jobs/'+id+'/retry',{method:'POST'})).job_id;
+  const kind=button.dataset.kind,target=kind==='import'?'import-progress':'generation-progress';
+  const job=kind==='import'?await waitForImportRegistration(id,target):await pollJob(id,target);
+  if(!sameViewContext(context))return;
+  if(kind==='import'){await refreshBanks(true);if(sameViewContext(context)){$('bank').value=importBankId(job);await selectBank();}announceImportRegistered(job);}
+  else await openWorksheet(job.result_id);
+}
+$('upload').onclick=()=>action($('upload'),async()=>{
+  const context=captureViewContext();
+  const file=$('upload-file').files[0];if(!file)throw Error('등록할 단어장을 선택하세요.');
+  const form=new FormData();form.append('file',file);
+  const activity=startTaskProgress('import-progress','단어장 파일을 등록하고 있습니다.',context);
+  try{
+  const result=await acceptImportFile(form,activity);
+  let id=result.bank_id,completed=null;if(result.job_id){rememberImportActivity(result.job_id,activity.started);completed=await waitForImportRegistration(result.job_id,'import-progress',{started:activity.started,owner:activity.owner,context});id=importBankId(completed);}
+  await refreshBanks(true);
+  if(sameViewContext(context)){$('bank').value=id;await selectBank();}
+  if(completed)announceImportRegistered(completed);else message('단어장 등록이 완료되었습니다.');
+  }finally{activity.stop();}
+});
+$('refresh').onclick=()=>action($('refresh'),()=>refresh(true));$('bank').onchange=()=>action($('bank'),selectBank);
+$('scope-mode').addEventListener('me:change',event=>setScopeMode(event.detail.value));
+$('units').onchange=updateScope;
+$('range-start').onchange=updateScope;$('range-end').onchange=updateScope;
+$('bulk-start').onchange=updateScope;$('bulk-end').onchange=updateScope;
+$('count-mode').onchange=()=>{homeChanged();$('count-field').classList.toggle('hidden',$('count-mode').value==='all');};
+$('use-available-count').onclick=()=>{
+  if(availableCountCorrection===null)return;
+  $('count').value=String(availableCountCorrection);
+  homeChanged();$('count').focus({preventScroll:true});
+};
+for(const id of ['count','shuffle','title'])$(id).addEventListener('input',homeChanged);
+$('partial').addEventListener('input',()=>{homeChanged();updatePending();});
+$('selection').onclick=()=>action($('selection'),async()=>{
+  const context=captureViewContext();
+  if(scopeMode==='bulk'){
+    const result=await request('/selection-bulk',json('POST',bulkBody()));
+    if(sameViewContext(context))renderBulkPlan(result.ranges);
+    return;
+  }
+  const result=await request('/selection',json('POST',selectionBody()));
+  if(!sameViewContext(context))return;
+  $('selection-preview').classList.remove('hidden');
+  $('selection-preview').textContent='중복 통합 후 '+result.count+'문항 · '+result.words.slice(0,12).map(w=>w.word).join(', ')+(result.count>12?' …':'');
+});
+$('generate').onclick=()=>action($('generate'),async()=>{
+  const context=captureViewContext();
+  if(scopeMode==='bulk')return generateBulk(context);
+  const payload=selectionBody();
+  const intent=intentFor('generate',JSON.stringify({bank_version:currentBank?.version??null,payload}));
+  const activity=startTaskProgress('generation-progress','시험지를 생성하고 있습니다.',context);
+  try{
+  const result=intent.job_id?{job_id:intent.job_id}:await request('/generate',json('POST',{...payload,request_id:intent.request_id}));
+  rememberIntentJob(intent,result.job_id);
+  const job=await pollJob(result.job_id,'generation-progress',{started:activity.started,owner:activity.owner,context});
+  clearIntent(intent);
+  if(sameViewContext(context))feedback($('generation-feedback'),'시험지 생성을 완료했습니다. 목록에서 미리보기 또는 수정을 선택하세요.','success');
+  }finally{activity.stop();}
+});
+$('review-entries').oninput=e=>{
+  const row=e.target.closest('.entry');if(!row||!currentBank)return;
+  homeChanged();
+  entryDrafts.set(draftKey(currentBank.id,row.dataset.id),{word:row.querySelector('.entry-word').value,meaning:row.querySelector('.entry-meaning').value});
+};
+$('review-entries').onclick=e=>{if(e.target.matches('.save-entry'))saveEntry(e.target);};
+$('worksheets').onclick=e=>{const button=e.target.closest('button');if(!button)return;if(button.matches('.delete-worksheet'))action(button,()=>deleteWorksheet(button));else if(button.matches('.open-worksheet'))action(button,()=>openWorksheet(button.dataset.id));else if(button.matches('.preview-worksheet'))action(button,()=>openWorksheetPreview(button.dataset.id));else if(button.matches('.drive-worksheet'))action(button,()=>worksheetDownloadManager().openDrive({...worksheetRows.find(item=>item.id===button.dataset.id),kind:writingMode?'meaning-writing':'word-meaning'}));else if(button.matches('.download-worksheet'))downloadWorksheetPdf(button.dataset.id,button.dataset.kind,button.dataset.title,button);};
+$('jobs').onclick=e=>{
+  if(e.target.matches('.follow-job'))action(e.target,()=>followJob(e.target));
+  else if(e.target.matches('.retry-job'))action(e.target,()=>followJob(e.target,true));
+  else if(e.target.matches('.delete-job'))action(e.target,()=>deleteJobMessage(e.target));
+};
+function changed(eventOrQuestion){
+  const question=eventOrQuestion?.target?.closest?.('.question')||(eventOrQuestion?.dataset?.id?eventOrQuestion:null);
+  feedback($('editor-feedback'));feedback($('preview-feedback'));
+  if(question)feedback(question.querySelector('.question-feedback'));
+  if(question)updateQuestionReview(question);
+  dirty=true;inputRevision++;renderMiniPreview();showPdf();updateSaveStatus();
+}
+$('questions').oninput=changed;$('edit-title').oninput=changed;
+$('questions').onclick=e=>{
+  const question=e.target.closest('.question');if(!question)return;
+  const button=e.target.closest('button');if(!button)return;
+  if(button.matches('.add-choice,.remove-choice'))changeChoice(question,button);
+  else if(button.matches('.replace-word'))replaceWritingWord(question.dataset.id);
+  else if(button.matches('.regenerate'))regenerateQuestion(question.dataset.id);
+  else if(button.matches('.candidate'))chooseCandidate(question.dataset.id,button.dataset.candidate);
+};
+$('save').onclick=()=>editorOperation(async context=>{if(await saveEdits(context))editorMessage('수정 내용을 저장했습니다. 바뀐 문항의 뜻과 정답을 확인해 주세요.');});
+$('render').onclick=()=>editorOperation(async context=>{
+  if(dirty&&!await saveEdits(context))return;if(!sameEditor(context))return;
+  const revision=inputRevision;
+  const result=await request('/worksheets/'+context.id+'/render',{method:'POST'});
+  if(acceptWorksheet(context,result.worksheet,revision))editorMessage('문제지와 정답지 PDF를 저장했습니다.');
+});
+$('pdf-kind').onchange=renderPreviewPdf;
+$('pdf-retry').onclick=renderPreviewPdf;
+$('download').onclick=()=>{if(!editorBusy&&!dirty&&currentWorksheet?.pdfs&&!currentWorksheet.pdfs_stale)return downloadWorksheetPdf(currentWorksheet.id,'combined',currentWorksheet.title,$('download'));};
+$('editor-preview').onclick=()=>{if(currentWorksheet)return openWorksheetPreview(currentWorksheet.id);};
+$('preview-edit').onclick=()=>{if(currentWorksheet)return openWorksheet(currentWorksheet.id);};
+$('preview-render').onclick=()=>editorOperation(async context=>{
+  const revision=inputRevision,result=await request('/worksheets/'+context.id+'/render',{method:'POST'});
+  if(acceptWorksheet(context,result.worksheet,revision)){await renderPreviewPdf();editorMessage('문제지와 정답지 PDF를 저장했습니다.');}
+});
+for(const id of ['editor-drive','preview-drive'])$(id).onclick=()=>action($(id),()=>{const url=driveLinks(currentWorksheet).sheet;if(url)window.open(url,'_blank','noopener');else throw Error('드라이브 연결을 확인해 주세요.');});
+
+async function back(){
+  if(!await leaveEditor())return false;
+  showHome();
+  refresh().catch(e=>message(e.message,true));
+  return true;
+}
+function showHome(){
+  clearDocumentFeedback();
+  stopPdfPreview();editorEpoch++;currentWorksheet=null;dirty=false;inputRevision++;
+  $('editor-view').classList.add('hidden');$('preview-view').classList.add('hidden');$('home-view').classList.remove('hidden');
+  queueEmbeddedLayout();window.scrollTo(0,0);
+}
+$('back').onclick=back;$('preview-back').onclick=back;$('home').onclick=goLegacy;$('legacy-home').onclick=goLegacy;
+$('leave-save').onclick=()=>finishLeave('save');$('leave-discard').onclick=()=>finishLeave('discard');$('leave-keep').onclick=()=>finishLeave('keep');
+$('leave-dialog').addEventListener('cancel',e=>{e.preventDefault();finishLeave('keep');});
+window.addEventListener('beforeunload',e=>{if(dirty||editorBusy||entryBusy||entryDrafts.size){e.preventDefault();e.returnValue='';}});
+
+function requestWorkMode(){return featureStatus?.work_mode==='request';}
+function currentModelOptions(){
+  if(featureStatus?.generation_available===false)throw Error('시험지 생성 기능을 사용할 수 없습니다. 잠시 후 다시 시도하세요.');
+  return{provider:'script',reasoning:'none'};
+}
+function safeDriveURL(value){
+  if(!value)return null;
+  try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password&&['drive.google.com','docs.google.com'].includes(url.hostname)?url.href:null;}catch{return null;}
+}
+function driveLinks(item){
+  const d=item?.drive||item?.drive_links||{};
+  const links=d.links||{};
+  return{folder:safeDriveURL(d.folder_url||item?.drive_folder_url),sheet:safeDriveURL(links.bank||links.sheet||d.sheet_url||d.bank_sheet_url||item?.sheet_url),source:safeDriveURL(links.original||d.source_url||item?.source?.webViewLink),student:safeDriveURL(links.student||d.student_pdf_url),answer:safeDriveURL(links.answer||d.answer_pdf_url)};
+}
+function linksHTML(links){
+  return '<div class="drive-links">'+links.filter(([url])=>url).map(([url,label])=>'<a href="'+esc(url)+'" target="_blank" rel="noopener">'+label+'</a>').join('')+'</div>';
+}
+function showBankDriveLinks(){
+  const links=driveLinks(currentBank);$('bank-drive-links').innerHTML=linksHTML([[links.source,'원본 단어장 열기'],[links.sheet,'단어은행 시트 열기']]);
+}
+function showWorksheetDriveLinks(){
+  const links=driveLinks(currentWorksheet);$('worksheet-drive-links').innerHTML=linksHTML([[links.folder,'드라이브 폴더 열기']]);
+}
+async function openDrive(){
+  let url=safeDriveURL(featureStatus?.drive_folder_url);
+  if(!url){
+    try{
+      const res=await fetch('/api/drive-folder',{signal:networkSignal(90000)});if(!res.ok)throw Error('드라이브 연결을 확인해 주세요.');
+      const info=await res.json();url=safeDriveURL(info.web_link);
+    }catch(error){
+      if(error?.name==='TimeoutError')throw Error('드라이브 응답이 지연되고 있습니다. 잠시 후 다시 열어 주세요.');
+      throw error;
+    }
+  }
+  if(!url)throw Error('드라이브 연결을 확인해 주세요.');
+  window.open(url,'_blank','noopener');
+}
+async function goLegacy(){
+  if(embedded){return window.parent.setWorksheetKind('standard');}
+  if(!await leaveEditor())return false;
+  window.location.assign('/');return true;
+}
+function autoResumeJobs(jobs){
+  for(const job of jobs.filter(j=>j.kind==='import'&&j.engine_version===2&&['queued','running'].includes(j.status))){
+    if(pollingJobs.has(job.id))continue;
+    waitForImportRegistration(job.id,'import-progress',{foreground:false}).then(async registered=>{
+      await refreshBanks(true);announceImportRegistered(registered);
+    }).catch(()=>{});
+  }
+  if(!requestWorkMode())return;
+  for(const job of jobs.filter(j=>['queued','running'].includes(j.status)&&!(j.kind==='import'&&j.engine_version===2))){
+    if(!resumeQueued.has(job.id)&&!pollingJobs.has(job.id)){resumeQueued.add(job.id);resumeQueue.push(job);}
+  }
+  if(autoResumeRunning||!resumeQueue.length)return;
+  autoResumeRunning=true;
+  (async()=>{
+    while(resumeQueue.length){
+      const job=resumeQueue.shift();
+      try{await pollJob(job.id,job.kind==='import'?'import-progress':'generation-progress',{foreground:false});}
+      catch(error){recordJobError(job.id,error,job.kind==='import'?'import-progress':'generation-progress');}
+      finally{resumeQueued.delete(job.id);}
+    }
+  })().finally(()=>{autoResumeRunning=false;});
+}
+async function applyTarget(params){
+  const hasTarget=['bank_id','job_id','source_file_id'].some(key=>params.get(key));
+  if(hasTarget){
+    if(entryDrafts.size){
+      message('단어장에 저장하지 않은 수정이 있습니다. 수정한 어휘를 등록한 뒤 다른 단어장을 선택해 주세요.',true);
+      if(embedded)window.frameElement?.scrollIntoView({block:'start'});
+      window.scrollTo(0,0);return false;
+    }
+    if(!await leaveEditor())return false;
+    showHome();homeRevision++;
+  }
+  await refreshBanks();
+  const context=captureViewContext();
+  let bankId=params.get('bank_id'),jobId=params.get('job_id');
+  const sourceId=params.get('source_file_id');
+  if(sourceId){
+    const imported=await request('/imports/existing',json('POST',{file_id:sourceId}));bankId=imported.bank_id;jobId=imported.job_id;
+  }
+  if(jobId){
+    const job=await request('/jobs/'+jobId);
+    const result=job.kind==='import'?(importIsRegistered(job)?job:await waitForImportRegistration(jobId,'import-progress')):(job.status==='complete'?job:await pollJob(jobId,'generation-progress'));
+    if(job.kind==='import'){bankId=importBankId(result);if(job.status!=='complete')waitForImportRegistration(jobId,'import-progress',{foreground:false}).catch(()=>{});}else{if(!sameViewContext(context))return false;return await openWorksheet(result.result_id);}
+  }
+  if(bankId){if(![...$('bank').options].some(option=>option.value===bankId))await refreshBanks(true);if(!sameViewContext(context))return false;$('bank').value=bankId;await selectBank();}
+  refreshWorksheetLists().catch(error=>message(error.message,true));
+  if(readIntents().length)refreshJobs().catch(error=>message(error.message,true));
+  return true;
+}
+async function boot(){
+  const params=new URLSearchParams(window.location?.search||'');
+  const result=await applyTarget(params),saved=savedImportActivity();
+  if(saved&&!params.get('job_id')){
+    const context=captureViewContext(),started=performance.now()-Math.max(0,Date.now()-saved.startedAt);
+    waitForImportRegistration(saved.id,'import-progress',{foreground:false,started}).then(async job=>{
+      await refreshBanks(true);if(!sameViewContext(context))return;
+      $('bank').value=importBankId(job);await selectBank();announceImportRegistered(job);
+    }).catch(error=>message(error.message,true));
+  }
+  refreshJobs().catch(()=>{});
+  return result;
+}
+function openTarget(params){
+  const nextParams=new URLSearchParams(params.toString());
+  const pending=targetQueue.then(()=>applyTarget(nextParams));
+  targetQueue=pending.catch(()=>{});
+  return pending;
+}
+$('open-drive').onclick=()=>action($('open-drive'),openDrive);
+
+const ready=boot();
+let targetQueue=ready.catch(()=>{});
+window.melodyWordMeaning={ready,reportLayout:queueEmbeddedLayout,openTarget,openWorksheet,openPreview:openWorksheetPreview,refresh,refreshBanks,worksheetDeleted,canDeleteBank,bankDeleted,bankRenamed,bankUpdated:bankRenamed,leave:async()=>{const allowed=await leaveEditor();if(allowed)homeChanged();return allowed;},home:back,syncTheme};
+observeEmbeddedLayout();
+ready.then(queueEmbeddedLayout,queueEmbeddedLayout);
+ready.catch(e=>message(e.message,true));
+
+</script></body></html>
